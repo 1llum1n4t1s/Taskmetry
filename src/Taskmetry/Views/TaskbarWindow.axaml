@@ -1,0 +1,140 @@
+<Window
+    x:Class="Taskmetry.Views.TaskbarWindow"
+    xmlns="https://github.com/avaloniaui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:vm="using:Taskmetry.ViewModels"
+    x:DataType="vm:TaskbarViewModel"
+    Title="Taskmetry.LiveRail"
+    Background="Transparent"
+    CanResize="False"
+    ExtendClientAreaToDecorationsHint="True"
+    ExtendClientAreaTitleBarHeightHint="-1"
+    ShowActivated="False"
+    ShowInTaskbar="False"
+    WindowDecorations="None"
+    Topmost="True"
+    TransparencyLevelHint="Transparent"
+    WindowStartupLocation="Manual">
+
+    <Border
+        Name="Rail"
+        Margin="1"
+        Padding="3"
+        Background="#F50A0F1C"
+        BorderBrush="#4D7992B5"
+        BorderThickness="1"
+        BoxShadow="0 2 9 0 #87000000, inset 0 1 0 0 #24FFFFFF"
+        CornerRadius="7"
+        PointerPressed="OnRailPointerPressed"
+        PointerReleased="OnRailPointerReleased"
+        ToolTip.Tip="{Binding LayoutHint}">
+        <Grid>
+            <ItemsControl IsVisible="{Binding IsHorizontal}" ItemsSource="{Binding Metrics}">
+                <ItemsControl.ItemsPanel>
+                    <ItemsPanelTemplate>
+                        <UniformGrid Rows="1" />
+                    </ItemsPanelTemplate>
+                </ItemsControl.ItemsPanel>
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate x:DataType="vm:MetricItemViewModel">
+                        <Border
+                            MinWidth="50"
+                            Margin="2,0"
+                            Padding="6,2,6,3"
+                            Background="#8A0D1626"
+                            BorderBrush="#263D5574"
+                            BorderThickness="1"
+                            CornerRadius="4"
+                            ToolTip.Tip="{Binding DetailText}">
+                            <Grid RowDefinitions="10,*,4">
+                                <TextBlock
+                                    FontFamily="Cascadia Mono, Consolas"
+                                    FontSize="7.5"
+                                    FontWeight="Bold"
+                                    Foreground="{Binding AccentBrush}"
+                                    LetterSpacing="0.6"
+                                    Text="{Binding Label}" />
+                                <StackPanel
+                                    Grid.Row="1"
+                                    HorizontalAlignment="Right"
+                                    Orientation="Horizontal"
+                                    Spacing="1"
+                                    VerticalAlignment="Center">
+                                    <TextBlock
+                                        FontFamily="Cascadia Mono, Consolas"
+                                        FontSize="16"
+                                        FontWeight="Bold"
+                                        Foreground="{Binding StatusBrush}"
+                                        Text="{Binding ValueNumber}" />
+                                    <TextBlock
+                                        Margin="0,0,0,2"
+                                        FontFamily="Cascadia Mono, Consolas"
+                                        FontSize="7.5"
+                                        FontWeight="Bold"
+                                        Foreground="{Binding StatusBrush}"
+                                        Text="{Binding UnitText}"
+                                        VerticalAlignment="Bottom" />
+                                </StackPanel>
+                                <Grid Grid.Row="2">
+                                    <Border Height="3" Background="#34405263" CornerRadius="2" />
+                                    <ProgressBar Height="3" Background="Transparent" BorderThickness="0" Foreground="{Binding StatusBrush}" Maximum="100" Minimum="0" Value="{Binding Progress}" />
+                                </Grid>
+                            </Grid>
+                        </Border>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+
+            <ItemsControl IsVisible="{Binding IsVertical}" ItemsSource="{Binding Metrics}">
+                <ItemsControl.ItemsPanel>
+                    <ItemsPanelTemplate>
+                        <UniformGrid Columns="1" />
+                    </ItemsPanelTemplate>
+                </ItemsControl.ItemsPanel>
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate x:DataType="vm:MetricItemViewModel">
+                        <Border
+                            MinHeight="50"
+                            Margin="0,2"
+                            Padding="3,4"
+                            Background="#8A0D1626"
+                            BorderBrush="#263D5574"
+                            BorderThickness="1"
+                            CornerRadius="4"
+                            ToolTip.Tip="{Binding DetailText}">
+                            <Grid RowDefinitions="Auto,*,3">
+                                <TextBlock
+                                    HorizontalAlignment="Center"
+                                    FontFamily="Cascadia Mono, Consolas"
+                                    FontSize="7"
+                                    FontWeight="Bold"
+                                    Foreground="{Binding AccentBrush}"
+                                    Text="{Binding Label}" />
+                                <StackPanel Grid.Row="1" HorizontalAlignment="Center" Orientation="Horizontal">
+                                    <TextBlock FontFamily="Cascadia Mono, Consolas" FontSize="14" FontWeight="Bold" Foreground="{Binding StatusBrush}" Text="{Binding ValueNumber}" />
+                                    <TextBlock FontFamily="Cascadia Mono, Consolas" FontSize="7" Foreground="{Binding StatusBrush}" Text="{Binding UnitText}" VerticalAlignment="Bottom" />
+                                </StackPanel>
+                                <ProgressBar Grid.Row="2" Height="3" Background="#34405263" BorderThickness="0" Foreground="{Binding StatusBrush}" Maximum="100" Value="{Binding Progress}" />
+                            </Grid>
+                        </Border>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+
+            <Border
+                Padding="7,2"
+                HorizontalAlignment="Center"
+                VerticalAlignment="Top"
+                Background="#E6FFBF47"
+                CornerRadius="0,0,5,5"
+                IsVisible="{Binding IsLayoutEditMode}">
+                <TextBlock
+                    FontFamily="Cascadia Mono, Consolas"
+                    FontSize="8"
+                    FontWeight="Bold"
+                    Foreground="#111827"
+                    Text="EDIT  ↔  DRAG" />
+            </Border>
+        </Grid>
+    </Border>
+</Window>

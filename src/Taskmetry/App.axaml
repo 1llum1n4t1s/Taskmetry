@@ -1,0 +1,16 @@
+<Application
+    x:Class="Taskmetry.App"
+    xmlns="https://github.com/avaloniaui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    RequestedThemeVariant="Dark">
+    <Application.Styles>
+        <FluentTheme />
+        <Style Selector="Window">
+            <Setter Property="FontFamily" Value="Segoe UI Variable, Yu Gothic UI, Segoe UI" />
+        </Style>
+        <Style Selector="ToolTip">
+            <Setter Property="FontFamily" Value="Cascadia Mono, Consolas, Yu Gothic UI" />
+            <Setter Property="FontSize" Value="11" />
+        </Style>
+    </Application.Styles>
+</Application>

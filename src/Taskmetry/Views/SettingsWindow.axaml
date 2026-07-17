@@ -1,0 +1,251 @@
+<Window
+    x:Class="Taskmetry.Views.SettingsWindow"
+    xmlns="https://github.com/avaloniaui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:vm="using:Taskmetry.ViewModels"
+    x:DataType="vm:SettingsViewModel"
+    Title="Taskmetry 設定"
+    Width="920"
+    Height="760"
+    MinWidth="780"
+    MinHeight="680"
+    Background="#0B1020"
+    Icon="avares://Taskmetry/Assets/taskmetry.png"
+    RequestedThemeVariant="Dark"
+    WindowStartupLocation="CenterScreen">
+
+    <Window.Styles>
+        <Style Selector="TextBlock.eyebrow">
+            <Setter Property="FontFamily" Value="Cascadia Mono, Consolas" />
+            <Setter Property="FontSize" Value="9" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Foreground" Value="#71809B" />
+            <Setter Property="LetterSpacing" Value="1.4" />
+        </Style>
+        <Style Selector="TextBlock.sectionTitle">
+            <Setter Property="FontSize" Value="14" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Foreground" Value="#F4F7FF" />
+        </Style>
+        <Style Selector="TextBlock.help">
+            <Setter Property="FontSize" Value="10.5" />
+            <Setter Property="Foreground" Value="#71809B" />
+            <Setter Property="TextWrapping" Value="Wrap" />
+        </Style>
+        <Style Selector="Border.card">
+            <Setter Property="Padding" Value="16" />
+            <Setter Property="Background" Value="#11182A" />
+            <Setter Property="BorderBrush" Value="#28364D" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="10" />
+        </Style>
+        <Style Selector="Border.meterCell">
+            <Setter Property="Margin" Value="2" />
+            <Setter Property="Padding" Value="8,4" />
+            <Setter Property="Background" Value="#0D1424" />
+            <Setter Property="BorderBrush" Value="#20304A" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="5" />
+        </Style>
+        <Style Selector="ToggleSwitch">
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="Foreground" Value="#D8DFED" />
+        </Style>
+        <Style Selector="Button">
+            <Setter Property="CornerRadius" Value="7" />
+            <Setter Property="Padding" Value="14,7" />
+        </Style>
+        <Style Selector="Button.primary">
+            <Setter Property="Background" Value="#3D7EF4" />
+            <Setter Property="Foreground" Value="White" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+        </Style>
+        <Style Selector="NumericUpDown">
+            <Setter Property="Width" Value="136" />
+            <Setter Property="HorizontalAlignment" Value="Right" />
+        </Style>
+    </Window.Styles>
+
+    <Grid RowDefinitions="Auto,*,Auto">
+        <Border
+            Padding="26,17"
+            Background="#0D1425"
+            BorderBrush="#233149"
+            BorderThickness="0,0,0,1">
+            <Grid ColumnDefinitions="*,Auto">
+                <StackPanel Spacing="3" VerticalAlignment="Center">
+                    <TextBlock Classes="eyebrow" Text="TASKMETRY // LIVE RAIL" />
+                    <TextBlock FontSize="25" FontWeight="SemiBold" Foreground="#F4F7FF" Text="タスクバーを、計器盤に。" />
+                    <TextBlock FontSize="11" Foreground="#8D99AE" Text="システム負荷とAIコンテキストを、一本のライブレールへ集約します。" />
+                </StackPanel>
+                <Border
+                    Grid.Column="1"
+                    Width="48"
+                    Height="48"
+                    Background="#14213A"
+                    BorderBrush="#365072"
+                    BorderThickness="1"
+                    CornerRadius="12">
+                    <Image Margin="9" Source="avares://Taskmetry/Assets/taskmetry.png" />
+                </Border>
+            </Grid>
+        </Border>
+
+        <ScrollViewer
+            Name="SettingsScroll"
+            Grid.Row="1"
+            HorizontalScrollBarVisibility="Disabled"
+            VerticalScrollBarVisibility="Auto">
+            <Grid Margin="24,18" ColumnDefinitions="*,*" RowDefinitions="Auto,Auto,Auto">
+                <Border Grid.ColumnSpan="2" Margin="0,0,0,14" Classes="card">
+                    <StackPanel Spacing="10">
+                        <Grid ColumnDefinitions="*,Auto">
+                            <StackPanel>
+                                <TextBlock Classes="eyebrow" Text="PREVIEW" />
+                                <TextBlock Classes="sectionTitle" Text="ライブレール表示" />
+                            </StackPanel>
+                            <TextBlock Grid.Column="1" VerticalAlignment="Bottom" Classes="eyebrow" Text="LOCAL / READ ONLY" />
+                        </Grid>
+                        <Border Height="62" Padding="3" Background="#080E19" BorderBrush="#3D6A7FA8" BorderThickness="1" CornerRadius="8">
+                            <Grid ColumnDefinitions="*,*,*,*,*">
+                                <Border Classes="meterCell">
+                                    <Grid RowDefinitions="Auto,*,3">
+                                        <TextBlock Classes="eyebrow" Foreground="#3FD8FF" Text="CPU" />
+                                        <TextBlock Grid.Row="1" HorizontalAlignment="Right" FontFamily="Cascadia Mono, Consolas" FontSize="18" FontWeight="Bold" Foreground="#55E6C1" Text="18%" />
+                                        <ProgressBar Grid.Row="2" Height="3" BorderThickness="0" Background="#263549" Foreground="#55E6C1" Maximum="100" Value="18" />
+                                    </Grid>
+                                </Border>
+                                <Border Grid.Column="1" Classes="meterCell">
+                                    <Grid RowDefinitions="Auto,*,3">
+                                        <TextBlock Classes="eyebrow" Foreground="#A88BFF" Text="RAM" />
+                                        <TextBlock Grid.Row="1" HorizontalAlignment="Right" FontFamily="Cascadia Mono, Consolas" FontSize="18" FontWeight="Bold" Foreground="#55E6C1" Text="52%" />
+                                        <ProgressBar Grid.Row="2" Height="3" BorderThickness="0" Background="#263549" Foreground="#55E6C1" Maximum="100" Value="52" />
+                                    </Grid>
+                                </Border>
+                                <Border Grid.Column="2" Classes="meterCell">
+                                    <Grid RowDefinitions="Auto,*,3">
+                                        <TextBlock Classes="eyebrow" Foreground="#67A4FF" Text="CODEX" />
+                                        <TextBlock Grid.Row="1" HorizontalAlignment="Right" FontFamily="Cascadia Mono, Consolas" FontSize="18" FontWeight="Bold" Foreground="#55E6C1" Text="37%" />
+                                        <ProgressBar Grid.Row="2" Height="3" BorderThickness="0" Background="#263549" Foreground="#55E6C1" Maximum="100" Value="37" />
+                                    </Grid>
+                                </Border>
+                                <Border Grid.Column="3" Classes="meterCell">
+                                    <Grid RowDefinitions="Auto,*,3">
+                                        <TextBlock Classes="eyebrow" Foreground="#FFC857" Text="CLAUDE" />
+                                        <TextBlock Grid.Row="1" HorizontalAlignment="Right" FontFamily="Cascadia Mono, Consolas" FontSize="18" FontWeight="Bold" Foreground="#55E6C1" Text="28%" />
+                                        <ProgressBar Grid.Row="2" Height="3" BorderThickness="0" Background="#263549" Foreground="#55E6C1" Maximum="100" Value="28" />
+                                    </Grid>
+                                </Border>
+                                <Border Grid.Column="4" Classes="meterCell">
+                                    <Grid RowDefinitions="Auto,*,3">
+                                        <TextBlock Classes="eyebrow" Foreground="#62E6A8" Text="GEMINI" />
+                                        <TextBlock Grid.Row="1" HorizontalAlignment="Right" FontFamily="Cascadia Mono, Consolas" FontSize="18" FontWeight="Bold" Foreground="#71809B" Text="—" />
+                                        <ProgressBar Grid.Row="2" Height="3" BorderThickness="0" Background="#263549" Foreground="#71809B" Maximum="100" Value="0" />
+                                    </Grid>
+                                </Border>
+                            </Grid>
+                        </Border>
+                    </StackPanel>
+                </Border>
+
+                <Border Grid.Row="1" Grid.Column="0" Margin="0,0,7,14" Classes="card">
+                    <StackPanel Spacing="12">
+                        <StackPanel>
+                            <TextBlock Classes="eyebrow" Text="LAYOUT LOCK" />
+                            <TextBlock Classes="sectionTitle" Text="配置と誤操作防止" />
+                        </StackPanel>
+                        <Grid ColumnDefinitions="*,160" RowDefinitions="Auto,Auto,Auto">
+                            <StackPanel Grid.Row="0">
+                                <TextBlock FontSize="12" Foreground="#D8DFED" Text="配置方法" />
+                                <TextBlock Classes="help" Text="空き幅不足時は外側へ退避" />
+                            </StackPanel>
+                            <ComboBox Grid.Row="0" Grid.Column="1" SelectedIndex="{Binding PlacementMode}">
+                                <ComboBoxItem Content="自動（推奨）" />
+                                <ComboBoxItem Content="空きスペース優先" />
+                                <ComboBoxItem Content="タスクバー外側" />
+                            </ComboBox>
+                            <ToggleSwitch Grid.Row="1" Grid.ColumnSpan="2" Margin="0,12,0,0" IsChecked="{Binding LayoutEditMode}" Content="レイアウト編集モード" />
+                            <Grid Grid.Row="2" Grid.ColumnSpan="2" Margin="0,8,0,0" ColumnDefinitions="*,Auto">
+                                <TextBlock Classes="help" VerticalAlignment="Center" Text="OFFではクリック透過で位置を固定します。" />
+                                <Button Grid.Column="1" Margin="10,0,0,0" Padding="10,5" FontSize="11" Command="{Binding ResetPositionCommand}" Content="位置をリセット" />
+                            </Grid>
+                        </Grid>
+                    </StackPanel>
+                </Border>
+
+                <Border Grid.Row="1" Grid.Column="1" Margin="7,0,0,14" Classes="card">
+                    <StackPanel Spacing="12">
+                        <StackPanel>
+                            <TextBlock Classes="eyebrow" Text="METRICS" />
+                            <TextBlock Classes="sectionTitle" Text="表示するメーター" />
+                        </StackPanel>
+                        <Grid ColumnDefinitions="*,*,*" RowDefinitions="Auto,Auto">
+                            <ToggleSwitch Grid.Row="0" Grid.Column="0" IsChecked="{Binding ShowCpu}" Content="CPU" />
+                            <ToggleSwitch Grid.Row="0" Grid.Column="1" IsChecked="{Binding ShowMemory}" Content="メモリ" />
+                            <ToggleSwitch Grid.Row="0" Grid.Column="2" IsChecked="{Binding ShowCodex}" Content="Codex" />
+                            <ToggleSwitch Grid.Row="1" Grid.Column="0" Margin="0,8,0,0" IsChecked="{Binding ShowClaude}" Content="Claude" />
+                            <ToggleSwitch Grid.Row="1" Grid.Column="1" Margin="0,8,0,0" IsChecked="{Binding ShowGemini}" Content="Gemini" />
+                        </Grid>
+                        <TextBlock Classes="help" Text="各CLIの直近セッションをローカルで読み取ります。APIキーや会話本文は送信しません。" />
+                    </StackPanel>
+                </Border>
+
+                <Border Grid.Row="2" Grid.Column="0" Margin="0,0,7,0" Classes="card">
+                    <StackPanel Spacing="12">
+                        <StackPanel>
+                            <TextBlock Classes="eyebrow" Text="BEHAVIOR" />
+                            <TextBlock Classes="sectionTitle" Text="表示と更新" />
+                        </StackPanel>
+                        <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto,Auto">
+                            <StackPanel Grid.Row="0">
+                                <TextBlock FontSize="12" Foreground="#D8DFED" Text="表示幅" />
+                                <TextBlock Classes="help" Text="空き幅へ自動縮小（px）" />
+                            </StackPanel>
+                            <NumericUpDown Grid.Row="0" Grid.Column="1" Minimum="420" Maximum="1200" Increment="20" Value="{Binding PreferredWidthPixels}" />
+                            <StackPanel Grid.Row="1" Margin="0,10,0,0">
+                                <TextBlock FontSize="12" Foreground="#D8DFED" Text="更新間隔" />
+                                <TextBlock Classes="help" Text="再読込の周期（秒）" />
+                            </StackPanel>
+                            <NumericUpDown Grid.Row="1" Grid.Column="1" Margin="0,10,0,0" Minimum="1" Maximum="30" Increment="1" Value="{Binding RefreshIntervalSeconds}" />
+                            <ToggleSwitch Grid.Row="2" Grid.ColumnSpan="2" Margin="0,12,0,0" IsChecked="{Binding StartWithWindows}" Content="Windowsへのサインイン時に起動" />
+                        </Grid>
+                    </StackPanel>
+                </Border>
+
+                <Border Grid.Row="2" Grid.Column="1" Margin="7,0,0,0" Classes="card">
+                    <StackPanel Spacing="12">
+                        <StackPanel>
+                            <TextBlock Classes="eyebrow" Text="CONTEXT LIMITS" />
+                            <TextBlock Classes="sectionTitle" Text="AIコンテキスト上限" />
+                        </StackPanel>
+                        <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto">
+                            <StackPanel Grid.Row="0">
+                                <TextBlock FontSize="12" Foreground="#D8DFED" Text="Claude" />
+                                <TextBlock Classes="help" Text="モデル／プランに合わせる" />
+                            </StackPanel>
+                            <NumericUpDown Grid.Row="0" Grid.Column="1" Minimum="32000" Maximum="4000000" Increment="10000" Value="{Binding ClaudeContextLimit}" />
+                            <StackPanel Grid.Row="1" Margin="0,10,0,0">
+                                <TextBlock FontSize="12" Foreground="#D8DFED" Text="Gemini" />
+                                <TextBlock Classes="help" Text="Gemini CLIのモデル上限" />
+                            </StackPanel>
+                            <NumericUpDown Grid.Row="1" Grid.Column="1" Margin="0,10,0,0" Minimum="32000" Maximum="4000000" Increment="10000" Value="{Binding GeminiContextLimit}" />
+                        </Grid>
+                    </StackPanel>
+                </Border>
+            </Grid>
+        </ScrollViewer>
+
+        <Border Grid.Row="2" Padding="24,11" Background="#0D1425" BorderBrush="#233149" BorderThickness="0,1,0,0">
+            <Grid ColumnDefinitions="*,Auto">
+                <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+                    <TextBlock VerticalAlignment="Center" FontSize="10.5" Foreground="#71809B" Text="{Binding StatusMessage}" />
+                    <Button Padding="9,4" FontSize="10.5" Command="{Binding OpenDataFolderCommand}" Content="保存先を開く" />
+                </StackPanel>
+                <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="9">
+                    <Button Command="{Binding CancelCommand}" Content="キャンセル" />
+                    <Button Classes="primary" Command="{Binding SaveCommand}" Content="設定を保存" />
+                </StackPanel>
+            </Grid>
+        </Border>
+    </Grid>
+</Window>

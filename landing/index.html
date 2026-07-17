@@ -1,0 +1,182 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="description" content="Taskmetry は、CPU・メモリ・AI CLI のコンテキスト使用率を Windows タスクバーへ常駐表示するローカルメーターです。" />
+  <meta name="theme-color" content="#071019" />
+  <title>Taskmetry — タスクバーに、いまの余裕を。</title>
+  <link rel="icon" href="assets/taskmetry.svg" type="image/svg+xml" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <a class="skip-link" href="#main">本文へ移動</a>
+
+  <header class="site-header">
+    <a class="brand" href="#top" aria-label="Taskmetry トップへ">
+      <img src="assets/taskmetry.svg" alt="" width="34" height="34" />
+      <span>Taskmetry</span>
+    </a>
+    <nav aria-label="ページ内ナビゲーション">
+      <a href="#features">できること</a>
+      <a href="#behavior">表示の仕組み</a>
+      <a href="#privacy">データの扱い</a>
+    </nav>
+    <a class="header-action" href="#start">はじめる <span aria-hidden="true">↓</span></a>
+  </header>
+
+  <main id="main">
+    <section id="top" class="hero" aria-labelledby="hero-title">
+      <div class="hero-copy">
+        <p class="eyebrow"><span class="signal-dot" aria-hidden="true"></span>WINDOWS TASKBAR UTILITY</p>
+        <h1 id="hero-title">タスクバーに、<br /><em>いまの余裕を。</em></h1>
+        <p class="hero-lead">
+          CPU・メモリ・Codex / Claude / Gemini のコンテキスト使用率を、
+          作業中の Windows タスクバーへ静かに常駐表示します。
+        </p>
+        <div class="hero-actions">
+          <a class="button button-primary" href="#features">仕組みを見る <span aria-hidden="true">→</span></a>
+          <a class="button button-quiet" href="#start">動作環境 <span aria-hidden="true">↓</span></a>
+        </div>
+        <dl class="hero-facts">
+          <div>
+            <dt>UPDATE</dt>
+            <dd>2<small>sec</small></dd>
+          </div>
+          <div>
+            <dt>NETWORK</dt>
+            <dd>0<small>send</small></dd>
+          </div>
+          <div>
+            <dt>MODE</dt>
+            <dd>LOCAL</dd>
+          </div>
+        </dl>
+      </div>
+
+      <div class="hero-visual" aria-label="Taskmetry のライブレール表示イメージ">
+        <div class="visual-caption"><span>LIVE RAIL</span><span>SYS // AI</span></div>
+        <div class="monitor-frame">
+          <div class="monitor-toolbar">
+            <span class="toolbar-mark" aria-hidden="true"></span>
+            <span>WORKSPACE</span>
+            <span class="toolbar-status">READY</span>
+          </div>
+          <div class="monitor-field">
+            <div class="ghost-copy">
+              <span></span><span></span><span></span><span></span><span></span>
+              <span></span><span></span><span></span><span></span>
+            </div>
+            <div class="taskbar-shell">
+              <div class="app-cluster" aria-hidden="true">
+                <i></i><i></i><i></i><i></i><i></i>
+              </div>
+              <div class="live-rail">
+                <article class="meter meter-cpu">
+                  <span>CPU</span><strong>28<small>%</small></strong><b style="--meter: 28%"></b>
+                </article>
+                <article class="meter meter-ram">
+                  <span>RAM</span><strong>56<small>%</small></strong><b style="--meter: 56%"></b>
+                </article>
+                <article class="meter meter-codex">
+                  <span>CODEX</span><strong>41<small>%</small></strong><b style="--meter: 41%"></b>
+                </article>
+                <article class="meter meter-claude">
+                  <span>CLAUDE</span><strong>28<small>%</small></strong><b style="--meter: 28%"></b>
+                </article>
+                <article class="meter meter-gemini">
+                  <span>GEMINI</span><strong>—</strong><b style="--meter: 0%"></b>
+                </article>
+              </div>
+              <div class="tray-icons" aria-hidden="true"><i></i><i></i><i></i></div>
+            </div>
+          </div>
+        </div>
+        <p class="visual-note">アイコンを避け、余白だけに走る。</p>
+      </div>
+    </section>
+
+    <section id="features" class="section features" aria-labelledby="features-title">
+      <div class="section-heading">
+        <p class="eyebrow">WHAT STAYS VISIBLE</p>
+        <h2 id="features-title">残量は、画面を奪わずに<br />見えていてほしい。</h2>
+      </div>
+      <div class="feature-grid">
+        <article class="feature-card feature-card-wide">
+          <p class="feature-index">01 / SPACE AWARE</p>
+          <h3>空きスペースを、<br />そのまま計器盤に。</h3>
+          <p>中央のアプリアイコンと通知領域の間を検出。ピン留めが増えても、アイコンを覆わない幅へ自動調整します。</p>
+          <div class="space-map" aria-hidden="true">
+            <span class="space-icons"><i></i><i></i><i></i><i></i></span>
+            <span class="space-gap"><b>LIVE RAIL</b></span>
+            <span class="space-tray"><i></i><i></i></span>
+          </div>
+        </article>
+        <article class="feature-card">
+          <p class="feature-index">02 / SYSTEM</p>
+          <h3>CPU と RAM を<br />ひと目で。</h3>
+          <p>今の負荷を大きな数値と段階色で表示。視線を止めずに、作業の余裕を判断できます。</p>
+          <div class="mini-dial"><span>SYS LOAD</span><strong>56<small>%</small></strong><b></b></div>
+        </article>
+        <article class="feature-card">
+          <p class="feature-index">03 / AI CONTEXT</p>
+          <h3>会話の余白も、<br />手元に置く。</h3>
+          <p>Codex、Claude、Gemini の直近セッションをローカルで読み取り、コンテキストの使用率を表示します。</p>
+          <div class="provider-lines" aria-hidden="true"><span>CODEX</span><span>CLAUDE</span><span>GEMINI</span></div>
+        </article>
+      </div>
+    </section>
+
+    <section id="behavior" class="section behavior" aria-labelledby="behavior-title">
+      <div class="behavior-copy">
+        <p class="eyebrow">ADAPTS TO THE TASKBAR</p>
+        <h2 id="behavior-title">置き場所は Windows に任せる。<br />触るときだけ、あなたに任せる。</h2>
+        <p>Taskmetry はタスクバーの位置と空き領域を都度確認します。表示のために既存の操作を奪わないことを、最初の仕様にしました。</p>
+      </div>
+      <ol class="behavior-list">
+        <li>
+          <span class="step-mark">A</span>
+          <div><h3>上下左右へ追従</h3><p>タスクバーの辺を判定し、横型・縦型のメーターを切り替えます。</p></div>
+        </li>
+        <li>
+          <span class="step-mark">B</span>
+          <div><h3>空きがなければ外側へ</h3><p>余白が狭い場合はタスクバーの外側へ退避。ピン留めアプリの操作を塞ぎません。</p></div>
+        </li>
+        <li>
+          <span class="step-mark">C</span>
+          <div><h3>固定時はクリック透過</h3><p>誤移動を防ぐ固定表示。位置を変えるときだけ編集モードでドラッグできます。</p></div>
+        </li>
+      </ol>
+    </section>
+
+    <section id="privacy" class="section privacy" aria-labelledby="privacy-title">
+      <div class="privacy-signal" aria-hidden="true">
+        <span>LOCAL</span><i></i><span>READ ONLY</span><i></i><span>NO UPLOAD</span>
+      </div>
+      <div class="privacy-copy">
+        <p class="eyebrow">LOCAL BY DESIGN</p>
+        <h2 id="privacy-title">情報は、この PC から<br />出しません。</h2>
+        <p>AI CLI がローカルに保存した直近セッションを読み取るだけ。APIキー、認証情報、会話本文を送信せず、Taskmetry 自体もネットワーク通信を行いません。</p>
+      </div>
+    </section>
+
+    <section id="start" class="section start" aria-labelledby="start-title">
+      <div>
+        <p class="eyebrow">START HERE</p>
+        <h2 id="start-title">余白を、<br />情報のために。</h2>
+      </div>
+      <div class="start-panel">
+        <p>Windows 10 以降 / x64 / .NET 10 SDK</p>
+        <pre><code>dotnet run --project src/Taskmetry/Taskmetry.csproj</code></pre>
+        <p class="start-note">起動後は表示項目と幅を選ぶだけ。設定は通知領域のアイコンからいつでも開けます。</p>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <a class="brand" href="#top"><img src="assets/taskmetry.svg" alt="" width="28" height="28" /><span>Taskmetry</span></a>
+    <p>Windows taskbar telemetry for the AI-native desktop.</p>
+    <p>MIT License</p>
+  </footer>
+</body>
+</html>
