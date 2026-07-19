@@ -55,7 +55,7 @@ public sealed partial class App : Application
 
     private void CreateTrayIcon()
     {
-        using var iconStream = AssetLoader.Open(new Uri("avares://Taskmetry/Assets/taskmetry.png"));
+        using var iconStream = AssetLoader.Open(new Uri("avares://Taskmetry/icon/app_icon.png"));
         var openItem = new NativeMenuItem("設定を開く");
         openItem.Click += (_, _) => ShowSettings();
         var exitItem = new NativeMenuItem("終了");

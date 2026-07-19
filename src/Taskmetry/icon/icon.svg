@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256">
   <rect x="10" y="10" width="236" height="236" rx="42" fill="#0B1020" stroke="#365072" stroke-width="6"/>
-  <text x="128" y="164" text-anchor="middle" font-family="Segoe UI, sans-serif" font-size="116" font-weight="700" fill="#F4F7FF">T</text>
+  <path d="M94 66H162V80H137V147H118V80H94Z" fill="#F4F7FF"/>
   <path d="M87 190h82" stroke="#3FD8FF" stroke-width="8" stroke-linecap="round"/>
   <path d="M65 203h126" stroke="#A88BFF" stroke-width="8" stroke-linecap="round"/>
   <path d="M46 216h164" stroke="#FFC857" stroke-width="8" stroke-linecap="round"/>

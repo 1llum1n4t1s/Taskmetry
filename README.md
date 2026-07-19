@@ -1,6 +1,6 @@
 # Taskmetry
 
-![Taskmetry](src/Taskmetry/Assets/taskmetry.png)
+![Taskmetry](src/Taskmetry/icon/app_icon.png)
 
 Taskmetry は、Windows のタスクバーに CPU・メモリ・AI CLI のコンテキスト使用状況を常時表示する軽量メーターです。
 

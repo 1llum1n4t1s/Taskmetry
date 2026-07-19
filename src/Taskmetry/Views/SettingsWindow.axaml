@@ -10,7 +10,7 @@
     MinWidth="780"
     MinHeight="680"
     Background="#0B1020"
-    Icon="avares://Taskmetry/Assets/taskmetry.png"
+    Icon="avares://Taskmetry/icon/app_icon.png"
     RequestedThemeVariant="Dark"
     WindowStartupLocation="CenterScreen">
 
@@ -86,7 +86,7 @@
                     BorderBrush="#365072"
                     BorderThickness="1"
                     CornerRadius="12">
-                    <Image Margin="9" Source="avares://Taskmetry/Assets/taskmetry.png" />
+                    <Image Margin="9" Source="avares://Taskmetry/icon/app_icon.png" />
                 </Border>
             </Grid>
         </Border>

@@ -4,6 +4,7 @@
     <AssemblyTitle>Taskmetry</AssemblyTitle>
     <AssemblyDescription>タスクバー常駐のシステム・AIトークンメーター</AssemblyDescription>
     <AssemblyProduct>Taskmetry</AssemblyProduct>
+    <ApplicationIcon>icon\app.ico</ApplicationIcon>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
     <InvariantGlobalization>false</InvariantGlobalization>
@@ -23,6 +24,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <AvaloniaResource Include="Assets\taskmetry.png" />
+    <!-- 設定画面と通知領域で使う高解像度アイコン。EXEには上記app.icoを埋め込む。 -->
+    <AvaloniaResource Include="icon\app_icon.png" />
   </ItemGroup>
 </Project>
