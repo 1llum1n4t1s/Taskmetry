@@ -13,6 +13,8 @@ namespace Taskmetry;
 public sealed partial class App : Application
 {
     private SettingsService? _settingsService;
+    private IStartupService? _startupService;
+    private IDataFolderService? _dataFolderService;
     private TaskbarViewModel? _taskbarViewModel;
     private SettingsWindow? _settingsWindow;
     private TrayIcon? _trayIcon;
@@ -28,7 +30,10 @@ public sealed partial class App : Application
             desktop.ShutdownMode = ShutdownMode.OnExplicitShutdown;
 
             _settingsService = new SettingsService();
-            var settings = _settingsService.Load();
+            _startupService = new StartupService();
+            _dataFolderService = new DataFolderService();
+            var loadResult = _settingsService.Load();
+            var settings = loadResult.Settings;
             _taskbarViewModel = new TaskbarViewModel(
                 _settingsService,
                 new SystemMetricsService(),
@@ -78,7 +83,7 @@ public sealed partial class App : Application
 
     private void ShowSettings()
     {
-        if (_settingsService is null)
+        if (_settingsService is null || _startupService is null || _dataFolderService is null)
         {
             return;
         }
@@ -94,7 +99,7 @@ public sealed partial class App : Application
             return;
         }
 
-        var viewModel = new SettingsViewModel(_settingsService);
+        var viewModel = new SettingsViewModel(_settingsService, _startupService, _dataFolderService);
         _settingsWindow = new SettingsWindow(viewModel);
         _settingsWindow.Closed += (_, _) => _settingsWindow = null;
         _settingsWindow.Show();

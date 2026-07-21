@@ -19,6 +19,7 @@ public sealed partial class TaskbarViewModel : ObservableObject, IDisposable
     private readonly MetricItemViewModel _gemini;
     private AppSettings _settings;
     private Task? _refreshTask;
+    private bool _manualOffsetSaveFailed;
 
     public TaskbarViewModel(
         SettingsService settingsService,
@@ -30,11 +31,11 @@ public sealed partial class TaskbarViewModel : ObservableObject, IDisposable
         _tokenUsageService = tokenUsageService;
         _settings = settingsService.Current.Clone();
 
-        _cpu = new MetricItemViewModel("cpu", "CPU", "#3FD8FF");
-        _memory = new MetricItemViewModel("memory", "RAM", "#A88BFF");
-        _codex = new MetricItemViewModel("codex", "CODEX", "#67A4FF");
-        _claude = new MetricItemViewModel("claude", "CLAUDE", "#FFC857");
-        _gemini = new MetricItemViewModel("gemini", "GEMINI", "#62E6A8");
+        _cpu = new MetricItemViewModel("CPU", "#3FD8FF");
+        _memory = new MetricItemViewModel("RAM", "#A88BFF");
+        _codex = new MetricItemViewModel("CODEX", "#67A4FF");
+        _claude = new MetricItemViewModel("CLAUDE", "#FFC857");
+        _gemini = new MetricItemViewModel("GEMINI", "#62E6A8");
         Metrics = [];
         ApplyVisibility();
 
@@ -50,9 +51,6 @@ public sealed partial class TaskbarViewModel : ObservableObject, IDisposable
 
     [ObservableProperty]
     private bool _isVertical;
-
-    [ObservableProperty]
-    private bool _isCompact;
 
     [ObservableProperty]
     private string _layoutHint = "固定表示 · 自動配置";
@@ -118,7 +116,15 @@ public sealed partial class TaskbarViewModel : ObservableObject, IDisposable
         if (!snapshot.IsAvailable)
         {
             item.SetPercent(null);
-            item.DetailText = $"{snapshot.Provider} のセッション記録が見つかりません";
+            item.DetailText = snapshot.AvailabilityReason switch
+            {
+                TokenAvailabilityReason.NoData => $"{snapshot.Provider} の利用量記録を待っています",
+                TokenAvailabilityReason.AccessDenied => $"{snapshot.Provider} の記録を読み取る権限がありません",
+                TokenAvailabilityReason.IoError => $"{snapshot.Provider} の記録を一時的に読み取れません",
+                TokenAvailabilityReason.UnsupportedFormat => $"{snapshot.Provider} の記録形式に対応していません",
+                TokenAvailabilityReason.TooLarge => $"{snapshot.Provider} の記録が大きすぎて解析できません",
+                _ => $"{snapshot.Provider} のセッション記録が見つかりません",
+            };
             return;
         }
 
@@ -158,17 +164,29 @@ public sealed partial class TaskbarViewModel : ObservableObject, IDisposable
     {
         IsVertical = placement.IsVertical;
         OnPropertyChanged(nameof(IsHorizontal));
-        IsCompact = placement.IsVertical || placement.Width < 560;
         var mode = IsLayoutEditMode ? "編集モード · ドラッグで移動" : "固定表示 · クリック透過";
         var location = placement.IsOutside ? "タスクバー外側" : "空きスペース";
-        LayoutHint = $"{mode} · {location}";
+        LayoutHint = _manualOffsetSaveFailed
+            ? "位置を保存できませんでした · 一時配置"
+            : $"{mode} · {location}";
     }
 
-    public void SaveManualOffset(int offsetPixels)
+    public bool SaveManualOffset(int offsetPixels)
     {
-        var settings = _settings.Clone();
-        settings.ManualOffsetPixels = offsetPixels;
-        _settingsService.Save(settings);
+        try
+        {
+            var settings = _settings.Clone();
+            settings.ManualOffsetPixels = offsetPixels;
+            _settingsService.Save(settings);
+            _manualOffsetSaveFailed = false;
+            return true;
+        }
+        catch (Exception ex) when (SettingsService.IsPersistenceException(ex))
+        {
+            _manualOffsetSaveFailed = true;
+            LayoutHint = "位置を保存できませんでした · 一時配置";
+            return false;
+        }
     }
 
     private void ApplyVisibility()
@@ -183,7 +201,6 @@ public sealed partial class TaskbarViewModel : ObservableObject, IDisposable
 
     private void AddIfVisible(MetricItemViewModel item, bool isVisible)
     {
-        item.IsVisible = isVisible;
         if (isVisible)
         {
             Metrics.Add(item);
@@ -203,6 +220,7 @@ public sealed partial class TaskbarViewModel : ObservableObject, IDisposable
     {
         _settingsService.SettingsChanged -= OnSettingsChanged;
         _cancellation.Cancel();
+        _tokenUsageService.Dispose();
         _cancellation.Dispose();
     }
 }

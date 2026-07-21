@@ -129,7 +129,8 @@ public sealed class TaskbarPlacementService
             ? (tray.IsValid ? tray.Top - 6 : taskbar.Bottom - 8)
             : (tray.IsValid ? tray.Left - 6 : taskbar.Right - 8);
         var gapLength = Math.Max(0, mainEnd - mainStart);
-        var mayUseGap = gapLength >= MinimumRailLength;
+        // Explorer 内部の占有領域が片方でも不明なら、アイコンを覆わないよう外側へ退避する。
+        var mayUseGap = rebar.IsValid && tray.IsValid && gapLength >= MinimumRailLength;
         var useOutside = placementMode == RailPlacementMode.OutsideTaskbar || !mayUseGap;
 
         if (!useOutside)

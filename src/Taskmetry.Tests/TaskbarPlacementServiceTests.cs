@@ -55,6 +55,27 @@ public sealed class TaskbarPlacementServiceTests
     }
 
     [Theory]
+    [InlineData(true, false)]
+    [InlineData(false, true)]
+    public void Explorer内部領域が不明ならアイコン保護のため外側へ退避する(bool hasTray, bool hasRebar)
+    {
+        var taskbar = new TaskbarPlacementService.Rectangle(0, 1040, 1920, 1080);
+        var tray = hasTray
+            ? new TaskbarPlacementService.Rectangle(1700, 1040, 1920, 1080)
+            : default;
+        var rebar = hasRebar
+            ? new TaskbarPlacementService.Rectangle(600, 1040, 1300, 1080)
+            : default;
+        var monitor = new TaskbarPlacementService.Rectangle(0, 0, 1920, 1080);
+
+        var result = TaskbarPlacementService.CalculatePlacement(taskbar, tray, rebar, monitor, 740);
+
+        Assert.False(result.UsedBlankGap);
+        Assert.True(result.IsOutside);
+        Assert.True(result.Y + result.Height < taskbar.Top);
+    }
+
+    [Theory]
     [InlineData(0, 0, 1920, 48, TaskbarEdge.Top)]
     [InlineData(0, 1032, 1920, 1080, TaskbarEdge.Bottom)]
     [InlineData(0, 0, 48, 1080, TaskbarEdge.Left)]

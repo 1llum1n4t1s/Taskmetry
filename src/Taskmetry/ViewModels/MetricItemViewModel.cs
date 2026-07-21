@@ -5,14 +5,12 @@ namespace Taskmetry.ViewModels;
 
 public sealed partial class MetricItemViewModel : ObservableObject
 {
-    public MetricItemViewModel(string key, string label, string accentColor)
+    public MetricItemViewModel(string label, string accentColor)
     {
-        Key = key;
         Label = label;
         AccentBrush = new SolidColorBrush(Color.Parse(accentColor));
     }
 
-    public string Key { get; }
     public string Label { get; }
     public IBrush AccentBrush { get; }
 
@@ -30,9 +28,6 @@ public sealed partial class MetricItemViewModel : ObservableObject
 
     [ObservableProperty]
     private double _progress;
-
-    [ObservableProperty]
-    private bool _isVisible = true;
 
     public void SetPercent(double? value)
     {

@@ -41,6 +41,9 @@ public sealed partial class SettingsWindow : Window
     {
         var settingsService = new Taskmetry.Services.SettingsService();
         _ = settingsService.Load();
-        return new SettingsViewModel(settingsService);
+        return new SettingsViewModel(
+            settingsService,
+            new Taskmetry.Services.StartupService(),
+            new Taskmetry.Services.DataFolderService());
     }
 }

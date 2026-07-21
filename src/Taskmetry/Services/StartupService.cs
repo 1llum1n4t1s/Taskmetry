@@ -2,12 +2,24 @@ using Microsoft.Win32;
 
 namespace Taskmetry.Services;
 
-public static class StartupService
+public interface IStartupService
+{
+    bool IsEnabled();
+    void SetEnabled(bool enabled);
+}
+
+public sealed class StartupService : IStartupService
 {
     private const string RunKeyPath = @"Software\Microsoft\Windows\CurrentVersion\Run";
     private const string ValueName = "Taskmetry";
 
-    public static void SetEnabled(bool enabled)
+    public bool IsEnabled()
+    {
+        using var key = Registry.CurrentUser.OpenSubKey(RunKeyPath, writable: false);
+        return key?.GetValue(ValueName) is string value && !string.IsNullOrWhiteSpace(value);
+    }
+
+    public void SetEnabled(bool enabled)
     {
         using var key = Registry.CurrentUser.OpenSubKey(RunKeyPath, writable: true)
             ?? Registry.CurrentUser.CreateSubKey(RunKeyPath, writable: true);
