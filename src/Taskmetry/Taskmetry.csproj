@@ -21,6 +21,7 @@
     <PackageReference Include="Avalonia.Desktop" Version="12.1.0" />
     <PackageReference Include="Avalonia.Themes.Fluent" Version="12.1.0" />
     <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.2" />
+    <PackageReference Include="VelopackUpdateDialog.Avalonia" Version="1.0.11" />
   </ItemGroup>
 
   <ItemGroup>

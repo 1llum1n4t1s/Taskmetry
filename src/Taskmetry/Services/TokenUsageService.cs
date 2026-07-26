@@ -1,713 +1,468 @@
-using System.Text;
+using System.ComponentModel;
 using System.Text.Json;
 using Taskmetry.Models;
 
 namespace Taskmetry.Services;
 
-public sealed class TokenUsageService : IDisposable
+public sealed record LlmLoginStart(string LoginId, Uri AuthenticationUri);
+
+public interface ILlmUsageService : IDisposable
 {
-    private const int TailReadLimitBytes = 4 * 1024 * 1024;
-    private const int LegacyJsonReadLimitBytes = 16 * 1024 * 1024;
-    private static readonly TimeSpan FullScanInterval = TimeSpan.FromMinutes(1);
-    private readonly string _userProfile;
+    Task<IReadOnlyDictionary<string, TokenUsageSnapshot>> ReadAllAsync(
+        AppSettings settings,
+        CancellationToken cancellationToken);
+
+    Task<IReadOnlyDictionary<string, LlmConnectionSnapshot>> ReadConnectionStatesAsync(
+        bool forceRefresh,
+        CancellationToken cancellationToken);
+
+    Task<LlmLoginStart> BeginCodexLoginAsync(CancellationToken cancellationToken);
+
+    Task<LlmConnectionSnapshot> CompleteCodexLoginAsync(
+        string loginId,
+        CancellationToken cancellationToken);
+
+    Task<LlmConnectionSnapshot> DisconnectCodexAsync(CancellationToken cancellationToken);
+
+    Task<LlmConnectionSnapshot> ConnectClaudeAsync(
+        string sessionKey,
+        CancellationToken cancellationToken);
+
+    Task<LlmConnectionSnapshot> DisconnectClaudeAsync(CancellationToken cancellationToken);
+}
+
+public sealed class TokenUsageService : ILlmUsageService
+{
+    private static readonly TimeSpan SuccessfulRefreshInterval = TimeSpan.FromMinutes(1);
+    private static readonly TimeSpan FailedRefreshInterval = TimeSpan.FromSeconds(15);
+    private readonly ICodexAppServerClient _codexClient;
+    private readonly IClaudeWebUsageClient _claudeClient;
     private readonly TimeProvider _timeProvider;
-    private readonly ProviderCache _codexCache = new();
-    private readonly ProviderCache _claudeCache = new();
-    private readonly ProviderCache _geminiCache = new();
+    private readonly SemaphoreSlim _codexRefreshGate = new(1, 1);
+    private readonly SemaphoreSlim _claudeRefreshGate = new(1, 1);
+    private TokenUsageSnapshot _codexSnapshot = TokenUsageSnapshot.Unavailable(
+        "Codex",
+        TokenAvailabilityReason.AuthenticationRequired);
+    private LlmConnectionSnapshot _codexConnection = AuthenticationRequired();
+    private TokenUsageSnapshot _claudeSnapshot = TokenUsageSnapshot.Unavailable(
+        "Claude",
+        TokenAvailabilityReason.AuthenticationRequired);
+    private LlmConnectionSnapshot _claudeConnection = ClaudeAuthenticationRequired();
+    private DateTimeOffset _nextCodexRefreshUtc = DateTimeOffset.MinValue;
+    private DateTimeOffset _nextClaudeRefreshUtc = DateTimeOffset.MinValue;
     private bool _disposed;
 
-    public TokenUsageService(string? userProfile = null, TimeProvider? timeProvider = null)
+    public TokenUsageService()
+        : this(new CodexAppServerClient(), new ClaudeWebUsageClient(), TimeProvider.System)
     {
-        _userProfile = userProfile ?? Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+    }
+
+    internal TokenUsageService(ICodexAppServerClient codexClient, TimeProvider? timeProvider = null)
+        : this(codexClient, new UnconfiguredClaudeWebUsageClient(), timeProvider)
+    {
+    }
+
+    internal TokenUsageService(
+        ICodexAppServerClient codexClient,
+        IClaudeWebUsageClient claudeClient,
+        TimeProvider? timeProvider = null)
+    {
+        _codexClient = codexClient;
+        _claudeClient = claudeClient;
         _timeProvider = timeProvider ?? TimeProvider.System;
     }
 
-    public Task<IReadOnlyDictionary<string, TokenUsageSnapshot>> ReadAllAsync(AppSettings settings, CancellationToken cancellationToken)
-        => Task.Run<IReadOnlyDictionary<string, TokenUsageSnapshot>>(() =>
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            var snapshots = new Dictionary<string, TokenUsageSnapshot>(StringComparer.OrdinalIgnoreCase)
-            {
-                ["Codex"] = ReadCodex(),
-                ["Claude"] = ReadClaude(settings.ClaudeContextLimit),
-                ["Gemini"] = ReadGemini(settings.GeminiContextLimit),
-            };
-            return snapshots;
-        }, cancellationToken);
-
-    private TokenUsageSnapshot ReadCodex()
+    public async Task<IReadOnlyDictionary<string, TokenUsageSnapshot>> ReadAllAsync(
+        AppSettings settings,
+        CancellationToken cancellationToken)
     {
-        var root = Path.Combine(_userProfile, ".codex", "sessions");
-        var search = FindNewestFile(
-            root,
-            static path => path.EndsWith(".jsonl", StringComparison.OrdinalIgnoreCase),
-            _codexCache);
-        if (search.Path is null)
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        _ = settings;
+        await Task.WhenAll(
+            RefreshCodexAsync(forceRefresh: false, cancellationToken),
+            RefreshClaudeAsync(forceRefresh: false, cancellationToken)).ConfigureAwait(false);
+        return new Dictionary<string, TokenUsageSnapshot>(StringComparer.OrdinalIgnoreCase)
         {
-            return TokenUsageSnapshot.Unavailable("Codex", search.FailureReason);
-        }
+            ["Codex"] = _codexSnapshot,
+            ["Claude"] = _claudeSnapshot,
+            ["Gemini"] = TokenUsageSnapshot.Unavailable(
+                "Gemini",
+                TokenAvailabilityReason.OfficialApiUnavailable),
+        };
+    }
 
-        return ReadJsonLines(
-            _codexCache,
+    public async Task<IReadOnlyDictionary<string, LlmConnectionSnapshot>> ReadConnectionStatesAsync(
+        bool forceRefresh,
+        CancellationToken cancellationToken)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        await Task.WhenAll(
+            RefreshCodexAsync(forceRefresh, cancellationToken),
+            RefreshClaudeAsync(forceRefresh, cancellationToken)).ConfigureAwait(false);
+        return new Dictionary<string, LlmConnectionSnapshot>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["Codex"] = _codexConnection,
+            ["Claude"] = _claudeConnection,
+            ["Gemini"] = new(
+                "Gemini",
+                LlmConnectionStatus.OfficialApiUnavailable,
+                "個人アカウントの使用率を定期取得できる公式Web APIは未提供です"),
+        };
+    }
+
+    public async Task<LlmLoginStart> BeginCodexLoginAsync(CancellationToken cancellationToken)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        var login = await _codexClient.StartChatGptLoginAsync(cancellationToken).ConfigureAwait(false);
+        _codexConnection = new LlmConnectionSnapshot(
             "Codex",
-            search.Path,
-            contextLimit: 0,
-            static (string json, long _, out TokenUsageSnapshot snapshot) => TryParseCodexUsage(json, out snapshot));
+            LlmConnectionStatus.AuthenticationInProgress,
+            "ブラウザーでOpenAI認証を完了してください");
+        _codexSnapshot = TokenUsageSnapshot.Unavailable(
+            "Codex",
+            TokenAvailabilityReason.AuthenticationInProgress);
+        _nextCodexRefreshUtc = _timeProvider.GetUtcNow() + TimeSpan.FromMinutes(5);
+        return new LlmLoginStart(login.LoginId, login.AuthenticationUri);
     }
 
-    private TokenUsageSnapshot ReadClaude(long contextLimit)
+    public async Task<LlmConnectionSnapshot> CompleteCodexLoginAsync(
+        string loginId,
+        CancellationToken cancellationToken)
     {
-        var root = Path.Combine(_userProfile, ".claude", "projects");
-        var subagentsSegment = $"{Path.DirectorySeparatorChar}subagents{Path.DirectorySeparatorChar}";
-        var search = FindNewestFile(
-            root,
-            path => path.EndsWith(".jsonl", StringComparison.OrdinalIgnoreCase)
-                && !path.Contains(subagentsSegment, StringComparison.OrdinalIgnoreCase),
-            _claudeCache);
-        if (search.Path is null)
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        var completed = await _codexClient
+            .WaitForLoginCompletionAsync(loginId, cancellationToken)
+            .ConfigureAwait(false);
+        _nextCodexRefreshUtc = DateTimeOffset.MinValue;
+
+        if (!completed)
         {
-            return TokenUsageSnapshot.Unavailable("Claude", search.FailureReason);
+            _codexConnection = AuthenticationRequired("OpenAI認証が完了しませんでした");
+            _codexSnapshot = TokenUsageSnapshot.Unavailable(
+                "Codex",
+                TokenAvailabilityReason.AuthenticationRequired);
+            return _codexConnection;
         }
 
-        return ReadJsonLines(
-            _claudeCache,
-            "Claude",
-            search.Path,
-            contextLimit,
-            static (string json, long limit, out TokenUsageSnapshot snapshot) => TryParseClaudeUsage(json, limit, out snapshot));
+        await RefreshCodexAsync(forceRefresh: true, cancellationToken).ConfigureAwait(false);
+        return _codexConnection;
     }
 
-    private TokenUsageSnapshot ReadGemini(long contextLimit)
+    public async Task<LlmConnectionSnapshot> ConnectClaudeAsync(
+        string sessionKey,
+        CancellationToken cancellationToken)
     {
-        var root = Path.Combine(_userProfile, ".gemini", "tmp");
-        var search = FindNewestFile(
-            root,
-            static path => (path.EndsWith(".jsonl", StringComparison.OrdinalIgnoreCase)
-                    || path.EndsWith(".json", StringComparison.OrdinalIgnoreCase))
-                && Path.GetFileName(path).StartsWith("session-", StringComparison.OrdinalIgnoreCase),
-            _geminiCache);
-        if (search.Path is null)
-        {
-            return TokenUsageSnapshot.Unavailable("Gemini", search.FailureReason);
-        }
-
-        if (search.Path.EndsWith(".json", StringComparison.OrdinalIgnoreCase))
-        {
-            return ReadLegacyGemini(_geminiCache, search.Path, contextLimit);
-        }
-
-        return ReadJsonLines(
-            _geminiCache,
-            "Gemini",
-            search.Path,
-            contextLimit,
-            static (string json, long limit, out TokenUsageSnapshot snapshot) => TryParseGeminiUsage(json, limit, out snapshot));
-    }
-
-    private TokenUsageSnapshot ReadJsonLines(
-        ProviderCache cache,
-        string provider,
-        string path,
-        long contextLimit,
-        UsageParser parser)
-    {
-        if (!TryGetFileStamp(path, out var stamp, out var failureReason))
-        {
-            return StoreCached(cache, default, contextLimit, TokenUsageSnapshot.Unavailable(provider, failureReason));
-        }
-
-        if (TryGetCached(cache, stamp, contextLimit, out var cached))
-        {
-            return cached;
-        }
-
-        Interlocked.Exchange(ref cache.ContentDirty, 0);
-        var tail = ReadTailLines(path);
-        if (tail.FailureReason != TokenAvailabilityReason.None)
-        {
-            return StoreCached(cache, stamp, contextLimit, TokenUsageSnapshot.Unavailable(provider, tail.FailureReason));
-        }
-
-        foreach (var line in tail.Lines.Reverse())
-        {
-            if (parser(line, contextLimit, out var snapshot))
-            {
-                return StoreCached(cache, stamp, contextLimit, snapshot with { UpdatedAt = stamp.LastWriteTimeUtc });
-            }
-        }
-
-        var reason = tail.Lines.Count == 0
-            ? TokenAvailabilityReason.NoData
-            : TokenAvailabilityReason.UnsupportedFormat;
-        return StoreCached(cache, stamp, contextLimit, TokenUsageSnapshot.Unavailable(provider, reason));
-    }
-
-    private TokenUsageSnapshot ReadLegacyGemini(ProviderCache cache, string path, long contextLimit)
-    {
-        if (!TryGetFileStamp(path, out var stamp, out var failureReason))
-        {
-            return StoreCached(cache, default, contextLimit, TokenUsageSnapshot.Unavailable("Gemini", failureReason));
-        }
-
-        if (TryGetCached(cache, stamp, contextLimit, out var cached))
-        {
-            return cached;
-        }
-
-        Interlocked.Exchange(ref cache.ContentDirty, 0);
-        if (stamp.Length > LegacyJsonReadLimitBytes)
-        {
-            return StoreCached(
-                cache,
-                stamp,
-                contextLimit,
-                TokenUsageSnapshot.Unavailable("Gemini", TokenAvailabilityReason.TooLarge));
-        }
-
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        ClaudeWebUsageClient.ValidateSessionKey(sessionKey);
+        await _claudeRefreshGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            var json = File.ReadAllText(path);
-            var snapshot = TryParseLegacyGeminiUsage(json, contextLimit, out var parsed)
-                ? parsed with { UpdatedAt = stamp.LastWriteTimeUtc }
-                : TokenUsageSnapshot.Unavailable("Gemini", json.Length == 0
-                    ? TokenAvailabilityReason.NoData
-                    : TokenAvailabilityReason.UnsupportedFormat);
-            return StoreCached(cache, stamp, contextLimit, snapshot);
+            var now = _timeProvider.GetUtcNow();
+            try
+            {
+                var usage = await _claudeClient
+                    .ConnectAsync(sessionKey, cancellationToken)
+                    .ConfigureAwait(false);
+                ApplyClaudeUsage(usage, now);
+                _nextClaudeRefreshUtc = now + SuccessfulRefreshInterval;
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (ClaudeWebUsageException ex)
+            {
+                ApplyClaudeFailure(ex, now);
+            }
+            catch (Exception ex) when (IsServiceFailure(ex))
+            {
+                ApplyClaudeStorageFailure(now);
+            }
+
+            return _claudeConnection;
         }
-        catch (UnauthorizedAccessException)
+        finally
         {
-            return StoreCached(
-                cache,
-                stamp,
-                contextLimit,
-                TokenUsageSnapshot.Unavailable("Gemini", TokenAvailabilityReason.AccessDenied));
-        }
-        catch (IOException)
-        {
-            return StoreCached(
-                cache,
-                stamp,
-                contextLimit,
-                TokenUsageSnapshot.Unavailable("Gemini", TokenAvailabilityReason.IoError));
-        }
-        catch (System.Security.SecurityException)
-        {
-            return StoreCached(
-                cache,
-                stamp,
-                contextLimit,
-                TokenUsageSnapshot.Unavailable("Gemini", TokenAvailabilityReason.AccessDenied));
+            _claudeRefreshGate.Release();
         }
     }
 
-    internal static bool TryParseCodexUsage(string json, out TokenUsageSnapshot snapshot)
+    public async Task<LlmConnectionSnapshot> DisconnectClaudeAsync(CancellationToken cancellationToken)
     {
-        snapshot = TokenUsageSnapshot.Unavailable("Codex");
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        await _claudeRefreshGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            using var document = JsonDocument.Parse(json);
-            var root = document.RootElement;
-            if (!TryGetString(root, "type", out var type) || type != "event_msg"
-                || !root.TryGetProperty("payload", out var payload)
-                || !TryGetString(payload, "type", out var payloadType) || payloadType != "token_count"
-                || !payload.TryGetProperty("info", out var info)
-                || !info.TryGetProperty("last_token_usage", out var lastUsage)
-                || !TryGetInt64(lastUsage, "total_tokens", out var used)
-                || !TryGetInt64(info, "model_context_window", out var limit))
-            {
-                return false;
-            }
-
-            double? rateLimit = null;
-            int? windowMinutes = null;
-            if (payload.TryGetProperty("rate_limits", out var rateLimits)
-                && rateLimits.TryGetProperty("primary", out var primary))
-            {
-                if (primary.TryGetProperty("used_percent", out var usedPercent) && usedPercent.TryGetDouble(out var percent))
-                {
-                    rateLimit = percent;
-                }
-
-                if (TryGetInt64(primary, "window_minutes", out var minutes) && minutes <= int.MaxValue)
-                {
-                    windowMinutes = (int)minutes;
-                }
-            }
-
-            snapshot = new TokenUsageSnapshot("Codex", used, limit, RateLimitPercent: rateLimit, RateLimitWindowMinutes: windowMinutes);
-            return true;
+            _claudeClient.Disconnect();
+            _claudeConnection = ClaudeAuthenticationRequired("Claudeとの接続を解除しました");
+            _claudeSnapshot = TokenUsageSnapshot.Unavailable(
+                "Claude",
+                TokenAvailabilityReason.AuthenticationRequired);
+            _nextClaudeRefreshUtc = DateTimeOffset.MinValue;
+            return _claudeConnection;
         }
-        catch (JsonException)
+        finally
         {
-            return false;
+            _claudeRefreshGate.Release();
         }
     }
 
-    internal static bool TryParseClaudeUsage(string json, long contextLimit, out TokenUsageSnapshot snapshot)
+    public async Task<LlmConnectionSnapshot> DisconnectCodexAsync(CancellationToken cancellationToken)
     {
-        snapshot = TokenUsageSnapshot.Unavailable("Claude");
-        try
-        {
-            using var document = JsonDocument.Parse(json);
-            var root = document.RootElement;
-            if (!TryGetString(root, "type", out var type) || type != "assistant"
-                || !root.TryGetProperty("message", out var message)
-                || !message.TryGetProperty("usage", out var usage))
-            {
-                return false;
-            }
-
-            var used = SumTokenFields(usage,
-                "input_tokens",
-                "cache_creation_input_tokens",
-                "cache_read_input_tokens",
-                "output_tokens");
-            if (used <= 0)
-            {
-                return false;
-            }
-
-            _ = TryGetString(message, "model", out var model);
-            snapshot = new TokenUsageSnapshot("Claude", used, contextLimit, model);
-            return true;
-        }
-        catch (JsonException)
-        {
-            return false;
-        }
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        await _codexClient.LogoutAsync(cancellationToken).ConfigureAwait(false);
+        _codexConnection = AuthenticationRequired("OpenAIアカウントとの接続を解除しました");
+        _codexSnapshot = TokenUsageSnapshot.Unavailable(
+            "Codex",
+            TokenAvailabilityReason.AuthenticationRequired);
+        _nextCodexRefreshUtc = DateTimeOffset.MinValue;
+        return _codexConnection;
     }
 
-    internal static bool TryParseGeminiUsage(string json, long contextLimit, out TokenUsageSnapshot snapshot)
+    private async Task RefreshCodexAsync(bool forceRefresh, CancellationToken cancellationToken)
     {
-        snapshot = TokenUsageSnapshot.Unavailable("Gemini");
-        try
-        {
-            using var document = JsonDocument.Parse(json);
-            return TryParseGeminiMessage(document.RootElement, contextLimit, out snapshot);
-        }
-        catch (JsonException)
-        {
-            return false;
-        }
-    }
-
-    internal static bool TryParseLegacyGeminiUsage(string json, long contextLimit, out TokenUsageSnapshot snapshot)
-    {
-        snapshot = TokenUsageSnapshot.Unavailable("Gemini");
-        try
-        {
-            using var document = JsonDocument.Parse(json);
-            if (!document.RootElement.TryGetProperty("messages", out var messages) || messages.ValueKind != JsonValueKind.Array)
-            {
-                return false;
-            }
-
-            for (var index = messages.GetArrayLength() - 1; index >= 0; index--)
-            {
-                if (TryParseGeminiMessage(messages[index], contextLimit, out snapshot))
-                {
-                    return true;
-                }
-            }
-
-            return false;
-        }
-        catch (JsonException)
-        {
-            return false;
-        }
-    }
-
-    private static bool TryParseGeminiMessage(JsonElement message, long contextLimit, out TokenUsageSnapshot snapshot)
-    {
-        snapshot = TokenUsageSnapshot.Unavailable("Gemini");
-        if (!TryGetString(message, "type", out var type) || type != "gemini"
-            || !message.TryGetProperty("tokens", out var tokens))
-        {
-            return false;
-        }
-
-        long used;
-        if (!TryGetInt64(tokens, "total", out used))
-        {
-            used = SumTokenFields(tokens, "input", "output", "cached", "thoughts", "tool");
-        }
-
-        if (used <= 0)
-        {
-            return false;
-        }
-
-        _ = TryGetString(message, "model", out var model);
-        snapshot = new TokenUsageSnapshot("Gemini", used, contextLimit, model);
-        return true;
-    }
-
-    private FileSearchResult FindNewestFile(
-        string root,
-        Func<string, bool> predicate,
-        ProviderCache cache)
-    {
-        EnsureWatcher(root, cache);
         var now = _timeProvider.GetUtcNow();
-        string? cachedPath;
-        DateTimeOffset nextFullScanUtc;
-        bool hasScanned;
-        TokenAvailabilityReason latestSearchReason;
-        lock (cache.Gate)
+        if (!forceRefresh && now < _nextCodexRefreshUtc)
         {
-            cachedPath = cache.LatestPath;
-            nextFullScanUtc = cache.NextFullScanUtc;
-            hasScanned = cache.HasScanned;
-            latestSearchReason = cache.LatestSearchReason;
+            return;
         }
 
-        var requiresScan = Volatile.Read(ref cache.IndexDirty) != 0
-            || !hasScanned
-            || now >= nextFullScanUtc
-            || cachedPath is not null && !File.Exists(cachedPath);
-        if (!requiresScan)
-        {
-            return new FileSearchResult(cachedPath, latestSearchReason);
-        }
-
-        Interlocked.Exchange(ref cache.IndexDirty, 0);
-        if (!Directory.Exists(root))
-        {
-            UpdateLatestPath(
-                cache,
-                null,
-                TokenAvailabilityReason.NotFound,
-                now + TimeSpan.FromSeconds(5));
-            return new FileSearchResult(null, TokenAvailabilityReason.NotFound);
-        }
-
+        await _codexRefreshGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            var options = new EnumerationOptions
-            {
-                RecurseSubdirectories = true,
-                IgnoreInaccessible = true,
-                AttributesToSkip = FileAttributes.ReparsePoint,
-            };
-
-            string? newestPath = null;
-            var newestWriteTime = DateTime.MinValue;
-            foreach (var path in Directory.EnumerateFiles(root, "*", options))
-            {
-                if (!predicate(path))
-                {
-                    continue;
-                }
-
-                DateTime writeTime;
-                try
-                {
-                    writeTime = File.GetLastWriteTimeUtc(path);
-                }
-                catch (UnauthorizedAccessException)
-                {
-                    continue;
-                }
-                catch (IOException)
-                {
-                    continue;
-                }
-
-                if (newestPath is null
-                    || writeTime > newestWriteTime
-                    || writeTime == newestWriteTime
-                        && StringComparer.OrdinalIgnoreCase.Compare(path, newestPath) > 0)
-                {
-                    newestPath = path;
-                    newestWriteTime = writeTime;
-                }
-            }
-
-            var failureReason = newestPath is null
-                ? TokenAvailabilityReason.NotFound
-                : TokenAvailabilityReason.None;
-            UpdateLatestPath(cache, newestPath, failureReason, now + FullScanInterval);
-            return new FileSearchResult(
-                newestPath,
-                failureReason);
-        }
-        catch (IOException)
-        {
-            UpdateNextScan(cache, TokenAvailabilityReason.IoError, now + TimeSpan.FromSeconds(5));
-            return new FileSearchResult(null, TokenAvailabilityReason.IoError);
-        }
-        catch (UnauthorizedAccessException)
-        {
-            UpdateNextScan(cache, TokenAvailabilityReason.AccessDenied, now + TimeSpan.FromSeconds(5));
-            return new FileSearchResult(null, TokenAvailabilityReason.AccessDenied);
-        }
-        catch (System.Security.SecurityException)
-        {
-            UpdateNextScan(cache, TokenAvailabilityReason.AccessDenied, now + TimeSpan.FromSeconds(5));
-            return new FileSearchResult(null, TokenAvailabilityReason.AccessDenied);
-        }
-    }
-
-    private static TailReadResult ReadTailLines(string path)
-    {
-        try
-        {
-            using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
-            var bytesToRead = (int)Math.Min(stream.Length, TailReadLimitBytes);
-            if (bytesToRead <= 0)
-            {
-                return new TailReadResult([], TokenAvailabilityReason.None);
-            }
-
-            stream.Seek(-bytesToRead, SeekOrigin.End);
-            var buffer = new byte[bytesToRead];
-            var totalRead = 0;
-            while (totalRead < buffer.Length)
-            {
-                var read = stream.Read(buffer, totalRead, buffer.Length - totalRead);
-                if (read == 0)
-                {
-                    break;
-                }
-
-                totalRead += read;
-            }
-
-            var text = Encoding.UTF8.GetString(buffer, 0, totalRead);
-            var lines = text.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-            if (stream.Length > bytesToRead && lines.Length > 0)
-            {
-                return new TailReadResult(lines[1..], TokenAvailabilityReason.None);
-            }
-
-            return new TailReadResult(lines, TokenAvailabilityReason.None);
-        }
-        catch (IOException)
-        {
-            return new TailReadResult([], TokenAvailabilityReason.IoError);
-        }
-        catch (UnauthorizedAccessException)
-        {
-            return new TailReadResult([], TokenAvailabilityReason.AccessDenied);
-        }
-        catch (System.Security.SecurityException)
-        {
-            return new TailReadResult([], TokenAvailabilityReason.AccessDenied);
-        }
-    }
-
-    private void EnsureWatcher(string root, ProviderCache cache)
-    {
-        lock (cache.Gate)
-        {
-            if (cache.Watcher is not null || !Directory.Exists(root))
+            now = _timeProvider.GetUtcNow();
+            if (!forceRefresh && now < _nextCodexRefreshUtc)
             {
                 return;
             }
 
             try
             {
-                var watcher = new FileSystemWatcher(root)
+                var account = await _codexClient.ReadAccountAsync(cancellationToken).ConfigureAwait(false);
+                if (!account.IsAuthenticated)
                 {
-                    IncludeSubdirectories = true,
-                    NotifyFilter = NotifyFilters.FileName
-                        | NotifyFilters.DirectoryName
-                        | NotifyFilters.LastWrite
-                        | NotifyFilters.Size,
-                };
-                watcher.Created += (_, _) => MarkIndexDirty(cache);
-                watcher.Deleted += (_, _) => MarkIndexDirty(cache);
-                watcher.Renamed += (_, _) => MarkIndexDirty(cache);
-                watcher.Changed += (_, args) => OnWatchedPathChanged(cache, args.FullPath);
-                watcher.Error += (_, _) => MarkIndexDirty(cache);
-                watcher.EnableRaisingEvents = true;
-                cache.Watcher = watcher;
+                    _codexConnection = AuthenticationRequired();
+                    _codexSnapshot = TokenUsageSnapshot.Unavailable(
+                        "Codex",
+                        TokenAvailabilityReason.AuthenticationRequired);
+                    _nextCodexRefreshUtc = now + SuccessfulRefreshInterval;
+                    return;
+                }
+
+                if (!string.Equals(account.AccountType, "chatgpt", StringComparison.OrdinalIgnoreCase))
+                {
+                    _codexConnection = new LlmConnectionSnapshot(
+                        "Codex",
+                        LlmConnectionStatus.UnsupportedAccount,
+                        "使用率表示にはChatGPTのWeb認証が必要です",
+                        account.Email);
+                    _codexSnapshot = TokenUsageSnapshot.Unavailable(
+                        "Codex",
+                        TokenAvailabilityReason.UnsupportedAccount);
+                    _nextCodexRefreshUtc = now + SuccessfulRefreshInterval;
+                    return;
+                }
+
+                var rateLimits = await _codexClient.ReadRateLimitsAsync(cancellationToken).ConfigureAwait(false);
+                _codexConnection = new LlmConnectionSnapshot(
+                    "Codex",
+                    LlmConnectionStatus.Connected,
+                    account.PlanType is { Length: > 0 }
+                        ? $"OpenAI公式APIへ接続済み · {account.PlanType}"
+                        : "OpenAI公式APIへ接続済み",
+                    account.Email);
+                _codexSnapshot = rateLimits.Windows.Count == 0
+                    ? new TokenUsageSnapshot(
+                        "Codex",
+                        [],
+                        account.Email,
+                        account.PlanType,
+                        now,
+                        TokenAvailabilityReason.NoData)
+                    : new TokenUsageSnapshot(
+                        "Codex",
+                        rateLimits.Windows,
+                        account.Email,
+                        account.PlanType,
+                        now);
+                _nextCodexRefreshUtc = now + SuccessfulRefreshInterval;
             }
-            catch (IOException)
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
-                // 通知を利用できない場合も定期的な全走査で追従する。
+                throw;
             }
-            catch (UnauthorizedAccessException)
+            catch (Exception ex) when (IsServiceFailure(ex))
             {
-                // アクセスが回復した後の定期走査で再試行する。
+                var serviceUnavailable = ex is Win32Exception or FileNotFoundException;
+                _codexConnection = new LlmConnectionSnapshot(
+                    "Codex",
+                    serviceUnavailable
+                        ? LlmConnectionStatus.ServiceUnavailable
+                        : LlmConnectionStatus.NetworkError,
+                    serviceUnavailable
+                        ? "Codex App Serverを起動できません。Codexのインストールを確認してください"
+                        : "OpenAI公式APIから使用率を取得できません。自動で再試行します");
+                _codexSnapshot = TokenUsageSnapshot.Unavailable(
+                    "Codex",
+                    serviceUnavailable
+                        ? TokenAvailabilityReason.ServiceUnavailable
+                        : TokenAvailabilityReason.NetworkError);
+                _nextCodexRefreshUtc = now + FailedRefreshInterval;
             }
-            catch (System.Security.SecurityException)
-            {
-                // 権限が回復した後の定期走査で再試行する。
-            }
+        }
+        finally
+        {
+            _codexRefreshGate.Release();
         }
     }
 
-    private static void OnWatchedPathChanged(ProviderCache cache, string path)
+    private async Task RefreshClaudeAsync(bool forceRefresh, CancellationToken cancellationToken)
     {
-        string? latestPath;
-        lock (cache.Gate)
+        var now = _timeProvider.GetUtcNow();
+        if (!forceRefresh && now < _nextClaudeRefreshUtc)
         {
-            latestPath = cache.LatestPath;
-        }
-
-        if (latestPath is not null && string.Equals(path, latestPath, StringComparison.OrdinalIgnoreCase))
-        {
-            Interlocked.Exchange(ref cache.ContentDirty, 1);
             return;
         }
 
-        MarkIndexDirty(cache);
-    }
-
-    private static void MarkIndexDirty(ProviderCache cache)
-    {
-        Interlocked.Exchange(ref cache.IndexDirty, 1);
-        Interlocked.Exchange(ref cache.ContentDirty, 1);
-    }
-
-    private static void UpdateLatestPath(
-        ProviderCache cache,
-        string? path,
-        TokenAvailabilityReason searchReason,
-        DateTimeOffset nextFullScanUtc)
-    {
-        lock (cache.Gate)
-        {
-            if (!string.Equals(cache.LatestPath, path, StringComparison.OrdinalIgnoreCase))
-            {
-                cache.LatestPath = path;
-                cache.ContentStamp = null;
-                cache.Snapshot = null;
-                Interlocked.Exchange(ref cache.ContentDirty, 1);
-            }
-
-            cache.NextFullScanUtc = nextFullScanUtc;
-            cache.LatestSearchReason = searchReason;
-            cache.HasScanned = true;
-        }
-    }
-
-    private static void UpdateNextScan(
-        ProviderCache cache,
-        TokenAvailabilityReason searchReason,
-        DateTimeOffset nextFullScanUtc)
-    {
-        lock (cache.Gate)
-        {
-            cache.NextFullScanUtc = nextFullScanUtc;
-            cache.LatestSearchReason = searchReason;
-            cache.HasScanned = true;
-        }
-    }
-
-    private static bool TryGetFileStamp(
-        string path,
-        out FileStamp stamp,
-        out TokenAvailabilityReason failureReason)
-    {
+        await _claudeRefreshGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            var info = new FileInfo(path);
-            info.Refresh();
-            if (!info.Exists)
+            now = _timeProvider.GetUtcNow();
+            if (!forceRefresh && now < _nextClaudeRefreshUtc)
             {
-                stamp = default;
-                failureReason = TokenAvailabilityReason.NotFound;
-                return false;
+                return;
             }
 
-            stamp = new FileStamp(path, info.Length, info.LastWriteTimeUtc);
-            failureReason = TokenAvailabilityReason.None;
-            return true;
-        }
-        catch (UnauthorizedAccessException)
-        {
-            stamp = default;
-            failureReason = TokenAvailabilityReason.AccessDenied;
-            return false;
-        }
-        catch (IOException)
-        {
-            stamp = default;
-            failureReason = TokenAvailabilityReason.IoError;
-            return false;
-        }
-        catch (System.Security.SecurityException)
-        {
-            stamp = default;
-            failureReason = TokenAvailabilityReason.AccessDenied;
-            return false;
-        }
-    }
-
-    private static bool TryGetCached(
-        ProviderCache cache,
-        FileStamp stamp,
-        long contextLimit,
-        out TokenUsageSnapshot snapshot)
-    {
-        lock (cache.Gate)
-        {
-            if (Volatile.Read(ref cache.ContentDirty) == 0
-                && cache.ContentStamp == stamp
-                && cache.ContextLimit == contextLimit
-                && cache.Snapshot is { } cached)
+            try
             {
-                snapshot = cached;
-                return true;
+                if (!_claudeClient.HasSessionKey())
+                {
+                    _claudeConnection = ClaudeAuthenticationRequired();
+                    _claudeSnapshot = TokenUsageSnapshot.Unavailable(
+                        "Claude",
+                        TokenAvailabilityReason.AuthenticationRequired);
+                    _nextClaudeRefreshUtc = now + SuccessfulRefreshInterval;
+                    return;
+                }
+
+                var usage = await _claudeClient.ReadUsageAsync(cancellationToken).ConfigureAwait(false);
+                ApplyClaudeUsage(usage, now);
+                _nextClaudeRefreshUtc = now + SuccessfulRefreshInterval;
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (ClaudeWebUsageException ex)
+            {
+                ApplyClaudeFailure(ex, now);
+            }
+            catch (ArgumentException)
+            {
+                _claudeConnection = ClaudeAuthenticationRequired(
+                    "保存済みのClaude Session Token形式を確認してください");
+                _claudeSnapshot = TokenUsageSnapshot.Unavailable(
+                    "Claude",
+                    TokenAvailabilityReason.AuthenticationRequired);
+                _nextClaudeRefreshUtc = now + SuccessfulRefreshInterval;
+            }
+            catch (Exception ex) when (IsServiceFailure(ex))
+            {
+                ApplyClaudeStorageFailure(now);
             }
         }
-
-        snapshot = null!;
-        return false;
-    }
-
-    private static TokenUsageSnapshot StoreCached(
-        ProviderCache cache,
-        FileStamp stamp,
-        long contextLimit,
-        TokenUsageSnapshot snapshot)
-    {
-        lock (cache.Gate)
+        finally
         {
-            cache.ContentStamp = stamp.Path is null ? null : stamp;
-            cache.ContextLimit = contextLimit;
-            cache.Snapshot = snapshot;
+            _claudeRefreshGate.Release();
         }
-
-        return snapshot;
     }
 
-    private static long SumTokenFields(JsonElement usage, params string[] names)
+    private void ApplyClaudeUsage(ClaudeWebUsageResult usage, DateTimeOffset now)
     {
-        long total = 0;
-        foreach (var name in names)
+        _claudeConnection = new LlmConnectionSnapshot(
+            "Claude",
+            LlmConnectionStatus.Connected,
+            "claude.ai公式Web応答へ接続済み",
+            usage.OrganizationName);
+        _claudeSnapshot = usage.Windows.Count == 0
+            ? new TokenUsageSnapshot(
+                "Claude",
+                [],
+                usage.OrganizationName,
+                UpdatedAt: now,
+                AvailabilityReason: TokenAvailabilityReason.NoData)
+            : new TokenUsageSnapshot(
+                "Claude",
+                usage.Windows,
+                usage.OrganizationName,
+                UpdatedAt: now);
+    }
+
+    private void ApplyClaudeFailure(ClaudeWebUsageException exception, DateTimeOffset now)
+    {
+        var status = exception.FailureKind switch
         {
-            if (TryGetInt64(usage, name, out var value))
-            {
-                total += value;
-            }
-        }
-
-        return total;
-    }
-
-    private static bool TryGetInt64(JsonElement element, string propertyName, out long value)
-    {
-        value = 0;
-        return element.TryGetProperty(propertyName, out var property)
-            && property.ValueKind == JsonValueKind.Number
-            && property.TryGetInt64(out value);
-    }
-
-    private static bool TryGetString(JsonElement element, string propertyName, out string? value)
-    {
-        value = null;
-        if (!element.TryGetProperty(propertyName, out var property) || property.ValueKind != JsonValueKind.String)
+            ClaudeWebFailureKind.AuthenticationRequired => LlmConnectionStatus.AuthenticationRequired,
+            ClaudeWebFailureKind.NetworkError => LlmConnectionStatus.NetworkError,
+            _ => LlmConnectionStatus.ServiceUnavailable,
+        };
+        var reason = exception.FailureKind switch
         {
-            return false;
-        }
+            ClaudeWebFailureKind.AuthenticationRequired => TokenAvailabilityReason.AuthenticationRequired,
+            ClaudeWebFailureKind.NetworkError => TokenAvailabilityReason.NetworkError,
+            _ => TokenAvailabilityReason.ServiceUnavailable,
+        };
+        var description = exception.FailureKind switch
+        {
+            ClaudeWebFailureKind.AuthenticationRequired
+                => "有効なClaude Session Tokenを貼り付けて再接続してください",
+            ClaudeWebFailureKind.NetworkError
+                => "claude.aiから使用率を取得できません。自動で再試行します",
+            _ => "claude.aiの非公開Web応答が変更された可能性があります",
+        };
 
-        value = property.GetString();
-        return value is not null;
+        _claudeConnection = new LlmConnectionSnapshot("Claude", status, description);
+        _claudeSnapshot = TokenUsageSnapshot.Unavailable("Claude", reason);
+        _nextClaudeRefreshUtc = now + (status == LlmConnectionStatus.AuthenticationRequired
+            ? SuccessfulRefreshInterval
+            : FailedRefreshInterval);
     }
+
+    private void ApplyClaudeStorageFailure(DateTimeOffset now)
+    {
+        _claudeConnection = new LlmConnectionSnapshot(
+            "Claude",
+            LlmConnectionStatus.ServiceUnavailable,
+            "ClaudeのSession TokenをWindows資格情報から読み書きできません");
+        _claudeSnapshot = TokenUsageSnapshot.Unavailable(
+            "Claude",
+            TokenAvailabilityReason.ServiceUnavailable);
+        _nextClaudeRefreshUtc = now + FailedRefreshInterval;
+    }
+
+    private static bool IsServiceFailure(Exception exception) => exception is
+        IOException
+        or Win32Exception
+        or JsonException
+        or UnauthorizedAccessException
+        or System.Security.SecurityException
+        or TimeoutException
+        or InvalidOperationException
+        or NotSupportedException;
+
+    private static LlmConnectionSnapshot AuthenticationRequired(
+        string description = "設定からOpenAIアカウントへWeb認証してください")
+        => new(
+            "Codex",
+            LlmConnectionStatus.AuthenticationRequired,
+            description);
+
+    private static LlmConnectionSnapshot ClaudeAuthenticationRequired(
+        string description = "ClaudeのSession Tokenを設定してください")
+        => new(
+            "Claude",
+            LlmConnectionStatus.AuthenticationRequired,
+            description);
 
     public void Dispose()
     {
@@ -717,40 +472,9 @@ public sealed class TokenUsageService : IDisposable
         }
 
         _disposed = true;
-        DisposeWatcher(_codexCache);
-        DisposeWatcher(_claudeCache);
-        DisposeWatcher(_geminiCache);
+        _codexClient.Dispose();
+        _claudeClient.Dispose();
+        _codexRefreshGate.Dispose();
+        _claudeRefreshGate.Dispose();
     }
-
-    private static void DisposeWatcher(ProviderCache cache)
-    {
-        lock (cache.Gate)
-        {
-            cache.Watcher?.Dispose();
-            cache.Watcher = null;
-        }
-    }
-
-    private delegate bool UsageParser(string json, long contextLimit, out TokenUsageSnapshot snapshot);
-
-    private sealed class ProviderCache
-    {
-        internal object Gate { get; } = new();
-        internal FileSystemWatcher? Watcher { get; set; }
-        internal string? LatestPath { get; set; }
-        internal DateTimeOffset NextFullScanUtc { get; set; }
-        internal bool HasScanned { get; set; }
-        internal TokenAvailabilityReason LatestSearchReason { get; set; } = TokenAvailabilityReason.NotFound;
-        internal int IndexDirty = 1;
-        internal int ContentDirty = 1;
-        internal FileStamp? ContentStamp { get; set; }
-        internal long ContextLimit { get; set; }
-        internal TokenUsageSnapshot? Snapshot { get; set; }
-    }
-
-    private readonly record struct FileSearchResult(string? Path, TokenAvailabilityReason FailureReason);
-    private readonly record struct FileStamp(string? Path, long Length, DateTime LastWriteTimeUtc);
-    private readonly record struct TailReadResult(
-        IReadOnlyList<string> Lines,
-        TokenAvailabilityReason FailureReason);
 }

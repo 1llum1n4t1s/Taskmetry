@@ -16,6 +16,21 @@
     TransparencyLevelHint="Transparent"
     WindowStartupLocation="Manual">
 
+    <Window.Styles>
+        <Style Selector="ProgressBar.meterGauge">
+            <Setter Property="Height" Value="3" />
+            <Setter Property="MinHeight" Value="0" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="CornerRadius" Value="2" />
+            <Setter Property="ClipToBounds" Value="True" />
+            <Setter Property="UseLayoutRounding" Value="True" />
+        </Style>
+        <Style Selector="ProgressBar.meterGauge /template/ Border#PART_Indicator">
+            <Setter Property="CornerRadius" Value="2" />
+        </Style>
+    </Window.Styles>
+
     <Border
         Name="Rail"
         Margin="1"
@@ -75,9 +90,9 @@
                                         Text="{Binding UnitText}"
                                         VerticalAlignment="Bottom" />
                                 </StackPanel>
-                                <Grid Grid.Row="2">
+                                <Grid Grid.Row="2" ClipToBounds="True">
                                     <Border Height="3" Background="#34405263" CornerRadius="2" />
-                                    <ProgressBar Height="3" Background="Transparent" BorderThickness="0" Foreground="{Binding StatusBrush}" Maximum="100" Minimum="0" Value="{Binding Progress}" />
+                                    <ProgressBar Classes="meterGauge" Background="Transparent" Foreground="{Binding StatusBrush}" Maximum="100" Minimum="0" Value="{Binding Progress}" />
                                 </Grid>
                             </Grid>
                         </Border>
@@ -114,7 +129,7 @@
                                     <TextBlock FontFamily="Cascadia Mono, Consolas" FontSize="14" FontWeight="Bold" Foreground="{Binding StatusBrush}" Text="{Binding ValueNumber}" />
                                     <TextBlock FontFamily="Cascadia Mono, Consolas" FontSize="7" Foreground="{Binding StatusBrush}" Text="{Binding UnitText}" VerticalAlignment="Bottom" />
                                 </StackPanel>
-                                <ProgressBar Grid.Row="2" Height="3" Background="#34405263" BorderThickness="0" Foreground="{Binding StatusBrush}" Maximum="100" Value="{Binding Progress}" />
+                                <ProgressBar Grid.Row="2" Classes="meterGauge" Background="#34405263" Foreground="{Binding StatusBrush}" Maximum="100" Value="{Binding Progress}" />
                             </Grid>
                         </Border>
                     </DataTemplate>

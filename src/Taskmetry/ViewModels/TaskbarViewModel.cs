@@ -10,7 +10,7 @@ public sealed partial class TaskbarViewModel : ObservableObject, IDisposable
 {
     private readonly SettingsService _settingsService;
     private readonly SystemMetricsService _systemMetricsService;
-    private readonly TokenUsageService _tokenUsageService;
+    private readonly ILlmUsageService _tokenUsageService;
     private readonly CancellationTokenSource _cancellation = new();
     private readonly MetricItemViewModel _cpu;
     private readonly MetricItemViewModel _memory;
@@ -24,7 +24,7 @@ public sealed partial class TaskbarViewModel : ObservableObject, IDisposable
     public TaskbarViewModel(
         SettingsService settingsService,
         SystemMetricsService systemMetricsService,
-        TokenUsageService tokenUsageService)
+        ILlmUsageService tokenUsageService)
     {
         _settingsService = settingsService;
         _systemMetricsService = systemMetricsService;
@@ -118,29 +118,31 @@ public sealed partial class TaskbarViewModel : ObservableObject, IDisposable
             item.SetPercent(null);
             item.DetailText = snapshot.AvailabilityReason switch
             {
-                TokenAvailabilityReason.NoData => $"{snapshot.Provider} の利用量記録を待っています",
-                TokenAvailabilityReason.AccessDenied => $"{snapshot.Provider} の記録を読み取る権限がありません",
-                TokenAvailabilityReason.IoError => $"{snapshot.Provider} の記録を一時的に読み取れません",
-                TokenAvailabilityReason.UnsupportedFormat => $"{snapshot.Provider} の記録形式に対応していません",
-                TokenAvailabilityReason.TooLarge => $"{snapshot.Provider} の記録が大きすぎて解析できません",
-                _ => $"{snapshot.Provider} のセッション記録が見つかりません",
+                TokenAvailabilityReason.AuthenticationRequired => $"設定から{snapshot.Provider}へWeb認証してください",
+                TokenAvailabilityReason.AuthenticationInProgress => $"{snapshot.Provider}のWeb認証を待っています",
+                TokenAvailabilityReason.NoData => $"{snapshot.Provider}公式APIに使用率データがありません",
+                TokenAvailabilityReason.OfficialApiUnavailable => $"{snapshot.Provider}個人プランの公式使用率APIは未提供です",
+                TokenAvailabilityReason.UnsupportedAccount => $"{snapshot.Provider}はWeb認証アカウントで接続してください",
+                TokenAvailabilityReason.ServiceUnavailable => $"{snapshot.Provider}公式連携サービスを起動できません",
+                TokenAvailabilityReason.NetworkError => $"{snapshot.Provider}公式APIへ接続できません · 自動再試行中",
+                _ => $"{snapshot.Provider}の公式使用率を取得できません",
             };
             return;
         }
 
-        item.SetPercent(snapshot.ContextPercent);
-        var detail = $"コンテキスト {FormatTokens(snapshot.UsedTokens)} / {FormatTokens(snapshot.ContextLimit)}";
-        if (!string.IsNullOrWhiteSpace(snapshot.Model))
+        item.SetPercent(snapshot.UsagePercent);
+        var detail = string.Join(
+            " · ",
+            snapshot.Windows.Select(static window =>
+            {
+                var reset = window.ResetsAt is { } resetsAt
+                    ? $" / {resetsAt.ToLocalTime():M/d HH:mm}更新"
+                    : string.Empty;
+                return $"{window.Label} {window.UsedPercent:0}%{reset}";
+            }));
+        if (!string.IsNullOrWhiteSpace(snapshot.PlanLabel))
         {
-            detail += $" · {snapshot.Model}";
-        }
-
-        if (snapshot.RateLimitPercent is { } rateLimit)
-        {
-            var window = snapshot.RateLimitWindowMinutes is { } minutes
-                ? minutes >= 1_440 ? $"{minutes / 1_440}日枠" : $"{minutes}分枠"
-                : "利用枠";
-            detail += $" · {window} {rateLimit:0}%";
+            detail += $" · {snapshot.PlanLabel}";
         }
 
         item.DetailText = detail;
@@ -206,13 +208,6 @@ public sealed partial class TaskbarViewModel : ObservableObject, IDisposable
             Metrics.Add(item);
         }
     }
-
-    internal static string FormatTokens(long tokens) => tokens switch
-    {
-        >= 1_000_000 => $"{tokens / 1_000_000d:0.##}M",
-        >= 1_000 => $"{tokens / 1_000d:0.#}K",
-        _ => tokens.ToString("N0"),
-    };
 
     private static string FormatBytes(ulong bytes) => $"{bytes / 1024d / 1024d / 1024d:0.0} GB";
 

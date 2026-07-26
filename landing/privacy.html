@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="description" content="Taskmetry のプライバシーポリシー。ローカル計測、Web認証、公式API通信の扱いを説明します。" />
+  <meta name="theme-color" content="#071019" />
+  <title>プライバシーポリシー — Taskmetry</title>
+  <link rel="icon" href="assets/taskmetry.svg" type="image/svg+xml" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <a class="skip-link" href="#main">本文へ移動</a>
+  <header class="site-header">
+    <a class="brand" href="index.html" aria-label="Taskmetry トップへ">
+      <img src="assets/taskmetry.svg" alt="" width="34" height="34" />
+      <span>Taskmetry</span>
+    </a>
+    <span></span>
+    <a class="header-action" href="index.html">トップへ <span aria-hidden="true">→</span></a>
+  </header>
+
+  <main id="main" class="legal-main">
+    <header class="legal-heading">
+      <p class="eyebrow">PRIVACY // OFFICIAL SOURCES ONLY</p>
+      <h1>プライバシー<br /><em>ポリシー。</em></h1>
+      <p>最終更新日: 2026年7月22日</p>
+    </header>
+
+    <section class="legal-section">
+      <h2>1. 取得・処理する情報</h2>
+      <p>Taskmetry は、CPU と物理メモリの使用状況を実行 PC 内で計測します。Codex の使用率表示ではOpenAI公式のCodex App Server APIから、Claudeの使用率表示では <code>claude.ai</code> の組織・使用率Web応答から、利用枠やリセット時刻などを取得します。ローカルの会話、セッション記録、CLI出力は読み取りません。</p>
+    </section>
+
+    <section class="legal-section">
+      <h2>2. Web認証と外部通信</h2>
+      <p>ユーザーがCodexの「Webで接続」を選ぶと、Taskmetryは既定のブラウザーでOpenAI公式認証画面を開きます。認証処理、トークンの保存、更新はCodex App Serverが担い、Taskmetryはパスワードや認証トークンを受け取ったり保存したりしません。接続後は公式使用率APIへ定期的に通信します。</p>
+      <p>Claude接続では、ユーザーがブラウザーから手動取得した <code>sessionKey</code> を入力します。Taskmetryは接続確認時と定期取得時に、この値をCookieとして <code>https://claude.ai</code> だけへ送信します。Claudeの使用率エンドポイントは公開APIではないため、Claude側の仕様変更によって取得できなくなる場合があります。</p>
+      <p>CPU・メモリの計測値、会話本文、ローカルログは外部へ送信しません。広告、解析、利用状況テレメトリも組み込んでいません。</p>
+    </section>
+
+    <section class="legal-section">
+      <h2>3. 更新確認の通信</h2>
+      <p>Velopack でインストールされた Taskmetry は、起動時およびユーザーが「更新を確認」を選んだとき、<code>taskmetry.kagayoi.com</code> へ HTTPS で更新 manifest を問い合わせます。更新を選択した場合は、同じ配信元から署名済み更新ファイルを取得します。通常の Web 配信と同様、配信基盤側で IP アドレスや User-Agent などのアクセス情報が一時的に処理される場合があります。</p>
+    </section>
+
+    <section class="legal-section">
+      <h2>4. ローカル保存</h2>
+      <p>表示項目、幅、更新間隔、レイアウト編集モードなどの設定は実行 PC 内へ保存されます。Claudeの <code>sessionKey</code> は設定JSONやログへ記録せず、接続確認に成功した後だけWindows資格情報マネージャーへ保存します。設定画面でClaudeの接続を解除すると、この資格情報も削除します。</p>
+    </section>
+
+    <section class="legal-section">
+      <h2>5. お問い合わせ</h2>
+      <p>不具合やプライバシーに関する連絡は、<a class="legal-contact" href="https://github.com/1llum1n4t1s/Taskmetry/issues">GitHub Issues</a> へお願いします。</p>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <a class="brand" href="index.html"><img src="assets/taskmetry.svg" alt="" width="28" height="28" /><span>Taskmetry</span></a>
+    <p>Local metrics. Signed updates.</p>
+    <div class="footer-links"><a href="index.html">Home</a><a href="https://github.com/1llum1n4t1s/Taskmetry">GitHub</a></div>
+  </footer>
+</body>
+</html>

@@ -26,6 +26,7 @@ public sealed partial class SettingsWindow : Window
     private void OnOpened(object? sender, EventArgs e)
     {
         Dispatcher.UIThread.Post(() => SettingsScroll.Offset = default, DispatcherPriority.Background);
+        _ = _viewModel.RefreshConnectionsCommand.ExecuteAsync(null);
     }
 
     private void OnCloseRequested(object? sender, EventArgs e) => Close();
@@ -35,6 +36,7 @@ public sealed partial class SettingsWindow : Window
         _viewModel.CloseRequested -= OnCloseRequested;
         Opened -= OnOpened;
         Closed -= OnClosed;
+        _viewModel.Dispose();
     }
 
     private static SettingsViewModel CreateDefaultViewModel()
