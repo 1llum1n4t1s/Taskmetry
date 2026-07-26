@@ -21,8 +21,6 @@ public sealed class AppSettings
     public int ManualOffsetPixels { get; set; }
     public int PreferredWidthPixels { get; set; } = 740;
     public int RefreshIntervalSeconds { get; set; } = 2;
-    public long ClaudeContextLimit { get; set; } = 1_000_000;
-    public long GeminiContextLimit { get; set; } = 1_048_576;
 
     public AppSettings Clone() => (AppSettings)MemberwiseClone();
 
@@ -36,7 +34,5 @@ public sealed class AppSettings
 
         ManualOffsetPixels = Math.Clamp(ManualOffsetPixels, -10_000, 10_000);
         RefreshIntervalSeconds = Math.Clamp(RefreshIntervalSeconds, 1, 30);
-        ClaudeContextLimit = Math.Clamp(ClaudeContextLimit, 32_000, 4_000_000);
-        GeminiContextLimit = Math.Clamp(GeminiContextLimit, 32_000, 4_000_000);
     }
 }

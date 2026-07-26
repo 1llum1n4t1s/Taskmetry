@@ -1,3 +1,5 @@
+using System.Text.Json;
+using Taskmetry.Models;
 using Taskmetry.Services;
 
 namespace Taskmetry.Tests;
@@ -5,207 +7,352 @@ namespace Taskmetry.Tests;
 public sealed class TokenUsageServiceTests
 {
     [Fact]
-    public void Codexの最新コンテキストと利用枠を解析できる()
+    public void Codex公式応答からChatGPTアカウントを解析できる()
     {
-        const string json = """
+        using var document = JsonDocument.Parse("""
             {
-              "type":"event_msg",
-              "payload":{
-                "type":"token_count",
-                "info":{
-                  "last_token_usage":{"total_tokens":96866},
-                  "model_context_window":258400
-                },
-                "rate_limits":{"primary":{"used_percent":55.0,"window_minutes":10080}}
-              }
+              "account": {
+                "type": "chatgpt",
+                "email": "user@example.com",
+                "planType": "pro"
+              },
+              "requiresOpenaiAuth": true
             }
-            """;
+            """);
 
-        var parsed = TokenUsageService.TryParseCodexUsage(json, out var result);
+        var account = CodexAppServerClient.ParseAccount(document.RootElement);
 
-        Assert.True(parsed);
-        Assert.Equal(96_866, result.UsedTokens);
-        Assert.Equal(258_400, result.ContextLimit);
-        Assert.Equal(55, result.RateLimitPercent);
-        Assert.Equal(10_080, result.RateLimitWindowMinutes);
+        Assert.True(account.IsAuthenticated);
+        Assert.Equal("chatgpt", account.AccountType);
+        Assert.Equal("user@example.com", account.Email);
+        Assert.Equal("pro", account.PlanType);
     }
 
     [Fact]
-    public void Claudeのキャッシュを含むコンテキスト量を合計できる()
+    public void 未認証のCodex公式応答を安全に扱える()
     {
-        const string json = """
+        using var document = JsonDocument.Parse("""{"account":null,"requiresOpenaiAuth":true}""");
+
+        var account = CodexAppServerClient.ParseAccount(document.RootElement);
+
+        Assert.False(account.IsAuthenticated);
+    }
+
+    [Fact]
+    public void Codex公式応答から複数の利用枠とリセット時刻を解析できる()
+    {
+        using var document = JsonDocument.Parse("""
             {
-              "type":"assistant",
-              "message":{
-                "model":"claude-sonnet-5",
-                "usage":{
-                  "input_tokens":2,
-                  "cache_creation_input_tokens":1701,
-                  "cache_read_input_tokens":273077,
-                  "output_tokens":258
+              "rateLimits": {
+                "limitId": "codex",
+                "limitName": null,
+                "primary": {
+                  "usedPercent": 37.5,
+                  "windowDurationMins": 300,
+                  "resetsAt": 1784678400
+                },
+                "secondary": {
+                  "usedPercent": 72,
+                  "windowDurationMins": 10080,
+                  "resetsAt": 1784851200
                 }
               }
             }
-            """;
+            """);
 
-        var parsed = TokenUsageService.TryParseClaudeUsage(json, 1_000_000, out var result);
+        var limits = CodexAppServerClient.ParseRateLimits(document.RootElement);
 
-        Assert.True(parsed);
-        Assert.Equal(275_038, result.UsedTokens);
-        Assert.Equal("claude-sonnet-5", result.Model);
-        Assert.Equal(27.5038, result.ContextPercent, precision: 4);
-    }
-
-    [Fact]
-    public void Geminiの記録済みtokenSummaryを解析できる()
-    {
-        const string json = """
+        Assert.Collection(
+            limits.Windows,
+            primary =>
             {
-              "id":"message-1",
-              "type":"gemini",
-              "model":"gemini-3-pro",
-              "tokens":{"input":12000,"output":500,"cached":3000,"thoughts":200,"tool":40,"total":15740}
-            }
-            """;
-
-        var parsed = TokenUsageService.TryParseGeminiUsage(json, 1_048_576, out var result);
-
-        Assert.True(parsed);
-        Assert.Equal(15_740, result.UsedTokens);
-        Assert.Equal("gemini-3-pro", result.Model);
-    }
-
-    [Theory]
-    [InlineData("{")]
-    [InlineData("{\"type\":\"event_msg\",\"payload\":{\"type\":\"token_count\"}}")]
-    public void Codexの破損または必須項目不足を安全に拒否する(string json)
-    {
-        Assert.False(TokenUsageService.TryParseCodexUsage(json, out _));
-    }
-
-    [Fact]
-    public void Claudeのtoken合計がゼロなら利用可能として扱わない()
-    {
-        const string json = """
-            {"type":"assistant","message":{"usage":{"input_tokens":0,"output_tokens":0}}}
-            """;
-
-        Assert.False(TokenUsageService.TryParseClaudeUsage(json, 1_000_000, out _));
-    }
-
-    [Fact]
-    public void Geminiの旧形式では末尾側の最新有効メッセージを選ぶ()
-    {
-        const string json = """
+                Assert.Equal("5時間枠", primary.Label);
+                Assert.Equal(37.5, primary.UsedPercent);
+                Assert.Equal(300, primary.WindowDurationMinutes);
+                Assert.NotNull(primary.ResetsAt);
+            },
+            secondary =>
             {
-              "messages": [
-                {"type":"gemini","model":"old","tokens":{"total":100}},
-                {"type":"user","content":"本文は解析対象外"},
-                {"type":"gemini","model":"latest","tokens":{"total":300}}
-              ]
+                Assert.Equal("1週間枠", secondary.Label);
+                Assert.Equal(72, secondary.UsedPercent);
+                Assert.Equal(10_080, secondary.WindowDurationMinutes);
+                Assert.NotNull(secondary.ResetsAt);
+            });
+    }
+
+    [Fact]
+    public void Codexデスクトップ版の最新実体を安全に選択する()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), $"Taskmetry.Tests-{Guid.NewGuid():N}");
+        try
+        {
+            var older = Path.Combine(directory, "OpenAI", "Codex", "bin", "older");
+            var newer = Path.Combine(directory, "OpenAI", "Codex", "bin", "newer");
+            Directory.CreateDirectory(older);
+            Directory.CreateDirectory(newer);
+            File.WriteAllBytes(Path.Combine(older, "codex.exe"), []);
+            File.WriteAllBytes(Path.Combine(newer, "codex.exe"), []);
+            Directory.SetLastWriteTimeUtc(older, new DateTime(2026, 7, 20, 0, 0, 0, DateTimeKind.Utc));
+            Directory.SetLastWriteTimeUtc(newer, new DateTime(2026, 7, 21, 0, 0, 0, DateTimeKind.Utc));
+
+            var executable = CodexAppServerClient.FindInstalledCodexExecutable(directory);
+
+            Assert.Equal(Path.Combine(newer, "codex.exe"), executable);
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task 画面更新が短くても公式APIは60秒間再取得しない()
+    {
+        var time = new MutableTimeProvider(new DateTimeOffset(2026, 7, 22, 0, 0, 0, TimeSpan.Zero));
+        var client = FakeCodexAppServerClient.Connected();
+        using var service = new TokenUsageService(client, time);
+
+        var first = await service.ReadAllAsync(new AppSettings(), TestContext.Current.CancellationToken);
+        var second = await service.ReadAllAsync(new AppSettings(), TestContext.Current.CancellationToken);
+
+        Assert.Same(first["Codex"], second["Codex"]);
+        Assert.Equal(1, client.AccountReadCount);
+        Assert.Equal(1, client.RateLimitsReadCount);
+
+        time.Advance(TimeSpan.FromSeconds(61));
+        _ = await service.ReadAllAsync(new AppSettings(), TestContext.Current.CancellationToken);
+
+        Assert.Equal(2, client.AccountReadCount);
+        Assert.Equal(2, client.RateLimitsReadCount);
+    }
+
+    [Fact]
+    public async Task 未認証時は公式API利用枠を読まずWeb認証を案内する()
+    {
+        var client = new FakeCodexAppServerClient
+        {
+            Account = new CodexAccountInfo(false),
+        };
+        using var service = new TokenUsageService(client);
+
+        var snapshots = await service.ReadAllAsync(new AppSettings(), TestContext.Current.CancellationToken);
+        var states = await service.ReadConnectionStatesAsync(false, TestContext.Current.CancellationToken);
+
+        Assert.Equal(TokenAvailabilityReason.AuthenticationRequired, snapshots["Codex"].AvailabilityReason);
+        Assert.Equal(LlmConnectionStatus.AuthenticationRequired, states["Codex"].Status);
+        Assert.Equal(0, client.RateLimitsReadCount);
+    }
+
+    [Fact]
+    public async Task ClaudeはSessionTokenを要求しGeminiは公式API未提供とする()
+    {
+        var client = FakeCodexAppServerClient.Connected();
+        using var service = new TokenUsageService(client);
+
+        var snapshots = await service.ReadAllAsync(new AppSettings(), TestContext.Current.CancellationToken);
+
+        Assert.Equal(TokenAvailabilityReason.AuthenticationRequired, snapshots["Claude"].AvailabilityReason);
+        Assert.Equal(TokenAvailabilityReason.OfficialApiUnavailable, snapshots["Gemini"].AvailabilityReason);
+    }
+
+    [Fact]
+    public async Task Claude接続後に公式Web使用率へ切り替わる()
+    {
+        var codexClient = FakeCodexAppServerClient.Connected();
+        var claudeClient = new FakeClaudeWebUsageClient
+        {
+            ConnectResult = new ClaudeWebUsageResult(
+                [new TokenUsageWindow("5時間枠", 63, 300)],
+                "Personal"),
+        };
+        using var service = new TokenUsageService(codexClient, claudeClient);
+
+        var connection = await service.ConnectClaudeAsync(
+            "sk-ant-sid01-test-session-token",
+            TestContext.Current.CancellationToken);
+        var snapshots = await service.ReadAllAsync(
+            new AppSettings(),
+            TestContext.Current.CancellationToken);
+
+        Assert.True(connection.IsConnected);
+        Assert.Equal(63, snapshots["Claude"].UsagePercent);
+        Assert.Equal("Personal", snapshots["Claude"].AccountLabel);
+        Assert.Equal(1, claudeClient.ConnectCount);
+        Assert.Equal(0, claudeClient.ReadCount);
+    }
+
+    [Fact]
+    public async Task 保存済みClaudeTokenが不正でも更新処理を停止しない()
+    {
+        var claudeClient = new FakeClaudeWebUsageClient
+        {
+            HasStoredSessionKey = true,
+            ReadFailure = new ArgumentException("invalid saved token"),
+        };
+        using var service = new TokenUsageService(
+            FakeCodexAppServerClient.Connected(),
+            claudeClient);
+
+        var snapshots = await service.ReadAllAsync(
+            new AppSettings(),
+            TestContext.Current.CancellationToken);
+        var states = await service.ReadConnectionStatesAsync(
+            forceRefresh: false,
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(TokenAvailabilityReason.AuthenticationRequired, snapshots["Claude"].AvailabilityReason);
+        Assert.Equal(LlmConnectionStatus.AuthenticationRequired, states["Claude"].Status);
+    }
+
+    [Fact]
+    public async Task 公式サービスの一時障害は例外を漏らさず再試行状態にする()
+    {
+        var client = new FakeCodexAppServerClient
+        {
+            AccountFailure = new IOException("temporary failure"),
+        };
+        using var service = new TokenUsageService(client);
+
+        var snapshots = await service.ReadAllAsync(new AppSettings(), TestContext.Current.CancellationToken);
+        var states = await service.ReadConnectionStatesAsync(false, TestContext.Current.CancellationToken);
+
+        Assert.Equal(TokenAvailabilityReason.NetworkError, snapshots["Codex"].AvailabilityReason);
+        Assert.Equal(LlmConnectionStatus.NetworkError, states["Codex"].Status);
+    }
+
+    [Fact]
+    public async Task Web認証完了後にCodex公式使用率へ切り替わる()
+    {
+        var client = new FakeCodexAppServerClient
+        {
+            Account = new CodexAccountInfo(false),
+            LoginCompletesSuccessfully = true,
+        };
+        using var service = new TokenUsageService(client);
+
+        var login = await service.BeginCodexLoginAsync(TestContext.Current.CancellationToken);
+        client.Account = new CodexAccountInfo(true, "chatgpt", "user@example.com", "plus");
+        client.RateLimits = new CodexRateLimits([new TokenUsageWindow("5時間枠", 48, 300)]);
+        var connection = await service.CompleteCodexLoginAsync(
+            login.LoginId,
+            TestContext.Current.CancellationToken);
+
+        Assert.True(connection.IsConnected);
+        var snapshots = await service.ReadAllAsync(new AppSettings(), TestContext.Current.CancellationToken);
+        Assert.Equal(48, snapshots["Codex"].UsagePercent);
+    }
+
+    private sealed class MutableTimeProvider(DateTimeOffset now) : TimeProvider
+    {
+        private DateTimeOffset _now = now;
+
+        public override DateTimeOffset GetUtcNow() => _now;
+
+        internal void Advance(TimeSpan duration) => _now += duration;
+    }
+
+    private sealed class FakeCodexAppServerClient : ICodexAppServerClient
+    {
+        internal CodexAccountInfo Account { get; set; } = new(false);
+        internal CodexRateLimits RateLimits { get; set; } = new([]);
+        internal bool LoginCompletesSuccessfully { get; set; }
+        internal Exception? AccountFailure { get; set; }
+        internal int AccountReadCount { get; private set; }
+        internal int RateLimitsReadCount { get; private set; }
+
+        internal static FakeCodexAppServerClient Connected() => new()
+        {
+            Account = new CodexAccountInfo(true, "chatgpt", "user@example.com", "pro"),
+            RateLimits = new CodexRateLimits([new TokenUsageWindow("5時間枠", 42, 300)]),
+        };
+
+        public Task<CodexAccountInfo> ReadAccountAsync(CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            AccountReadCount++;
+            if (AccountFailure is { } failure)
+            {
+                throw failure;
             }
-            """;
 
-        var parsed = TokenUsageService.TryParseLegacyGeminiUsage(json, 1_048_576, out var result);
+            return Task.FromResult(Account);
+        }
 
-        Assert.True(parsed);
-        Assert.Equal(300, result.UsedTokens);
-        Assert.Equal("latest", result.Model);
+        public Task<CodexRateLimits> ReadRateLimitsAsync(CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            RateLimitsReadCount++;
+            return Task.FromResult(RateLimits);
+        }
+
+        public Task<CodexLoginStart> StartChatGptLoginAsync(CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.FromResult(new CodexLoginStart(
+                "login-1",
+                new Uri("https://chatgpt.com/auth")));
+        }
+
+        public Task<bool> WaitForLoginCompletionAsync(string loginId, CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            Assert.Equal("login-1", loginId);
+            return Task.FromResult(LoginCompletesSuccessfully);
+        }
+
+        public Task LogoutAsync(CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            Account = new CodexAccountInfo(false);
+            return Task.CompletedTask;
+        }
+
+        public void Dispose()
+        {
+        }
     }
 
-    [Fact]
-    public async Task 未変更ログは解析結果を再利用し追記後だけ更新する()
+    private sealed class FakeClaudeWebUsageClient : IClaudeWebUsageClient
     {
-        var profile = CreateTemporaryProfile();
-        try
+        internal ClaudeWebUsageResult ConnectResult { get; set; } = new([]);
+        internal Exception? ReadFailure { get; set; }
+        internal int ConnectCount { get; private set; }
+        internal int ReadCount { get; private set; }
+        private bool _hasSessionKey;
+
+        internal bool HasStoredSessionKey
         {
-            var sessions = Path.Combine(profile, ".codex", "sessions");
-            Directory.CreateDirectory(sessions);
-            var file = Path.Combine(sessions, "session.jsonl");
-            await File.WriteAllTextAsync(file, CreateCodexUsageLine(100), TestContext.Current.CancellationToken);
-
-            using var service = new TokenUsageService(profile);
-            var settings = new Taskmetry.Models.AppSettings();
-            var first = await service.ReadAllAsync(settings, TestContext.Current.CancellationToken);
-            var second = await service.ReadAllAsync(settings, TestContext.Current.CancellationToken);
-
-            Assert.Same(first["Codex"], second["Codex"]);
-
-            await File.AppendAllTextAsync(
-                file,
-                Environment.NewLine + CreateCodexUsageLine(200),
-                TestContext.Current.CancellationToken);
-            var third = await service.ReadAllAsync(settings, TestContext.Current.CancellationToken);
-
-            Assert.NotSame(second["Codex"], third["Codex"]);
-            Assert.Equal(200, third["Codex"].UsedTokens);
+            set => _hasSessionKey = value;
         }
-        finally
+
+        public bool HasSessionKey() => _hasSessionKey;
+
+        public Task<ClaudeWebUsageResult> ReadUsageAsync(CancellationToken cancellationToken)
         {
-            Directory.Delete(profile, recursive: true);
+            cancellationToken.ThrowIfCancellationRequested();
+            ReadCount++;
+            if (ReadFailure is { } failure)
+            {
+                throw failure;
+            }
+
+            return Task.FromResult(ConnectResult);
         }
-    }
 
-    [Fact]
-    public async Task 記録が存在するが形式不明なら未使用と区別する()
-    {
-        var profile = CreateTemporaryProfile();
-        try
+        public Task<ClaudeWebUsageResult> ConnectAsync(
+            string sessionKey,
+            CancellationToken cancellationToken)
         {
-            var sessions = Path.Combine(profile, ".codex", "sessions");
-            Directory.CreateDirectory(sessions);
-            await File.WriteAllTextAsync(
-                Path.Combine(sessions, "session.jsonl"),
-                "{\"type\":\"future_format\"}",
-                TestContext.Current.CancellationToken);
-
-            using var service = new TokenUsageService(profile);
-            var result = await service.ReadAllAsync(
-                new Taskmetry.Models.AppSettings(),
-                TestContext.Current.CancellationToken);
-
-            Assert.Equal(
-                Taskmetry.Models.TokenAvailabilityReason.UnsupportedFormat,
-                result["Codex"].AvailabilityReason);
+            cancellationToken.ThrowIfCancellationRequested();
+            ConnectCount++;
+            _hasSessionKey = true;
+            return Task.FromResult(ConnectResult);
         }
-        finally
+
+        public void Disconnect() => _hasSessionKey = false;
+
+        public void Dispose()
         {
-            Directory.Delete(profile, recursive: true);
         }
     }
-
-    [Fact]
-    public async Task 記録がない状態を再読込しても未検出理由を維持する()
-    {
-        var profile = CreateTemporaryProfile();
-        try
-        {
-            using var service = new TokenUsageService(profile);
-
-            var first = await service.ReadAllAsync(
-                new Taskmetry.Models.AppSettings(),
-                TestContext.Current.CancellationToken);
-            var second = await service.ReadAllAsync(
-                new Taskmetry.Models.AppSettings(),
-                TestContext.Current.CancellationToken);
-
-            Assert.Equal(Taskmetry.Models.TokenAvailabilityReason.NotFound, first["Codex"].AvailabilityReason);
-            Assert.Equal(Taskmetry.Models.TokenAvailabilityReason.NotFound, second["Codex"].AvailabilityReason);
-        }
-        finally
-        {
-            Directory.Delete(profile, recursive: true);
-        }
-    }
-
-    private static string CreateTemporaryProfile()
-    {
-        var path = Path.Combine(Path.GetTempPath(), $"Taskmetry.Tests-{Guid.NewGuid():N}");
-        Directory.CreateDirectory(path);
-        return path;
-    }
-
-    private static string CreateCodexUsageLine(long usedTokens) => """
-        {"type":"event_msg","payload":{"type":"token_count","info":{"last_token_usage":{"total_tokens":__USED_TOKENS__},"model_context_window":258400}}}
-        """.Replace("__USED_TOKENS__", usedTokens.ToString(System.Globalization.CultureInfo.InvariantCulture));
 }
