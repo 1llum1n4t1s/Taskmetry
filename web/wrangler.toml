@@ -1,0 +1,15 @@
+# taskmetry.kagayoi.com は R2 の更新配信ドメインとランディングページを兼ねる。
+name = "taskmetry-landing"
+main = "worker.js"
+compatibility_date = "2026-07-21"
+
+routes = [
+  { pattern = "taskmetry.kagayoi.com/*", zone_name = "kagayoi.com" },
+  { pattern = "taskmetry.nephilim.jp/*", zone_name = "nephilim.jp" },
+]
+
+[assets]
+directory = "../landing"
+binding = "ASSETS"
+run_worker_first = true
+html_handling = "none"

@@ -1,0 +1,46 @@
+name: Build
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Windows x64 自己完結ビルド
+    runs-on: windows-2022
+    steps:
+      - name: リポジトリをチェックアウト
+        # actions/checkout@v4.2.2
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+        with:
+          persist-credentials: false
+
+      - name: .NET SDK をセットアップ
+        # actions/setup-dotnet@v4.3.1
+        uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: lock file を検証して復元
+        run: dotnet restore Taskmetry.slnx --locked-mode
+
+      - name: 自己完結版を公開
+        run: dotnet publish src/Taskmetry/Taskmetry.csproj -c Release -r win-x64 --self-contained --no-restore -o publish
+
+      - name: 成果物を確認
+        shell: pwsh
+        run: |
+          if (-not (Test-Path -LiteralPath 'publish/Taskmetry.exe')) {
+            throw 'publish/Taskmetry.exe が見つかりません。'
+          }
+
+      - name: 未署名の検証用成果物をアップロード
+        # actions/upload-artifact@v4.4.3
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: taskmetry-win-x64-unsigned
+          path: publish/**
+          retention-days: 7
+

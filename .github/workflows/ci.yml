@@ -1,0 +1,51 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Build & Test
+    runs-on: windows-2022
+    steps:
+      - name: リポジトリをチェックアウト
+        # actions/checkout@v4.2.2
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+        with:
+          persist-credentials: false
+
+      - name: .NET SDK をセットアップ
+        # actions/setup-dotnet@v4.3.1
+        uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: lock file を検証して復元
+        run: dotnet restore Taskmetry.slnx --locked-mode
+
+      - name: Release ビルド
+        run: dotnet build Taskmetry.slnx -c Release --no-restore
+
+      - name: テスト
+        run: dotnet test src/Taskmetry.Tests/Taskmetry.Tests.csproj -c Release --no-build --logger "trx;LogFileName=taskmetry-tests.trx" --results-directory TestResults
+
+      - name: テスト結果をアップロード
+        if: always()
+        # actions/upload-artifact@v4.4.3
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: taskmetry-test-results
+          path: TestResults/**
+          if-no-files-found: ignore
+          retention-days: 7
+
+  build:
+    uses: ./.github/workflows/build.yml
+
