@@ -24,7 +24,7 @@ jobs:
           dotnet-version: '10.0.x'
 
       - name: lock file を検証して復元
-        run: dotnet restore Taskmetry.slnx --locked-mode
+        run: dotnet restore src/Taskmetry/Taskmetry.csproj -r win-x64 --locked-mode
 
       - name: 自己完結ビルド用に RuntimeIdentifier 指定で追加復元
         # slnx全体のrestoreだけではRID固有のランタイムパックが復元されないため(NETSDK1112)、
