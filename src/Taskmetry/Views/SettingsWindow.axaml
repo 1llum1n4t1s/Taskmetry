@@ -199,13 +199,35 @@
                             <TextBlock Classes="eyebrow" Text="METRICS" />
                             <TextBlock Classes="sectionTitle" Text="表示するメーター" />
                         </StackPanel>
-                        <Grid ColumnDefinitions="*,*,*" RowDefinitions="Auto,Auto">
+                        <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto,Auto,Auto,Auto">
                             <ToggleSwitch Grid.Row="0" Grid.Column="0" IsChecked="{Binding ShowCpu}" Content="CPU" />
-                            <ToggleSwitch Grid.Row="0" Grid.Column="1" IsChecked="{Binding ShowMemory}" Content="メモリ" />
-                            <ToggleSwitch Grid.Row="0" Grid.Column="2" IsChecked="{Binding ShowCodex}" Content="Codex" />
-                            <ToggleSwitch Grid.Row="1" Grid.Column="0" Margin="0,8,0,0" IsChecked="{Binding ShowClaude}" Content="Claude" />
-                            <ToggleSwitch Grid.Row="1" Grid.Column="1" Margin="0,8,0,0" IsChecked="{Binding ShowGemini}" Content="Gemini" />
+                            <ComboBox Grid.Row="0" Grid.Column="1" MinWidth="76" IsEnabled="{Binding SplitRail}" SelectedIndex="{Binding CpuSide}">
+                                <ComboBoxItem Content="左" />
+                                <ComboBoxItem Content="右" />
+                            </ComboBox>
+                            <ToggleSwitch Grid.Row="1" Grid.Column="0" Margin="0,6,0,0" IsChecked="{Binding ShowMemory}" Content="メモリ" />
+                            <ComboBox Grid.Row="1" Grid.Column="1" Margin="0,6,0,0" MinWidth="76" IsEnabled="{Binding SplitRail}" SelectedIndex="{Binding MemorySide}">
+                                <ComboBoxItem Content="左" />
+                                <ComboBoxItem Content="右" />
+                            </ComboBox>
+                            <ToggleSwitch Grid.Row="2" Grid.Column="0" Margin="0,6,0,0" IsChecked="{Binding ShowCodex}" Content="Codex" />
+                            <ComboBox Grid.Row="2" Grid.Column="1" Margin="0,6,0,0" MinWidth="76" IsEnabled="{Binding SplitRail}" SelectedIndex="{Binding CodexSide}">
+                                <ComboBoxItem Content="左" />
+                                <ComboBoxItem Content="右" />
+                            </ComboBox>
+                            <ToggleSwitch Grid.Row="3" Grid.Column="0" Margin="0,6,0,0" IsChecked="{Binding ShowClaude}" Content="Claude" />
+                            <ComboBox Grid.Row="3" Grid.Column="1" Margin="0,6,0,0" MinWidth="76" IsEnabled="{Binding SplitRail}" SelectedIndex="{Binding ClaudeSide}">
+                                <ComboBoxItem Content="左" />
+                                <ComboBoxItem Content="右" />
+                            </ComboBox>
+                            <ToggleSwitch Grid.Row="4" Grid.Column="0" Margin="0,6,0,0" IsChecked="{Binding ShowGemini}" Content="Gemini" />
+                            <ComboBox Grid.Row="4" Grid.Column="1" Margin="0,6,0,0" MinWidth="76" IsEnabled="{Binding SplitRail}" SelectedIndex="{Binding GeminiSide}">
+                                <ComboBoxItem Content="左" />
+                                <ComboBoxItem Content="右" />
+                            </ComboBox>
                         </Grid>
+                        <ToggleSwitch IsChecked="{Binding SplitRail}" Content="アイコン群の左右に分割して表示" />
+                        <TextBlock Classes="help" Text="分割ONで、スタートボタンとピン留めアイコンより左の空きと、アイコンから通知領域までの空きへメーターを振り分けます。縦置きタスクバーでは左がアイコンより上、右がアイコンより下です。表示幅は左右へ按分され、位置ドラッグは分割中は使いません。" />
                         <TextBlock Classes="help" Text="AI使用率は公式Web/APIの応答だけを使用します。ローカルの会話・ログ・CLI出力は読み取りません。" />
                     </StackPanel>
                 </Border>

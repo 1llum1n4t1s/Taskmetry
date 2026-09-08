@@ -7,6 +7,5 @@ artifacts/
 publish/
 publish-precheck/
 local-release/
-.serena/
 *.user
 *.suo

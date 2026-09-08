@@ -3,6 +3,7 @@ using System.ComponentModel;
 using System.Diagnostics;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using Taskmetry.Models;
 
 namespace Taskmetry.Services;
@@ -53,14 +54,14 @@ internal sealed class CodexAppServerClient : ICodexAppServerClient
     {
         var result = await SendRequestAsync(
             "account/read",
-            new { refreshToken = false },
+            new JsonObject { ["refreshToken"] = false },
             cancellationToken).ConfigureAwait(false);
         return ParseAccount(result);
     }
 
     public async Task<CodexRateLimits> ReadRateLimitsAsync(CancellationToken cancellationToken)
     {
-        var result = await SendRequestAsync("account/rateLimits/read", new { }, cancellationToken).ConfigureAwait(false);
+        var result = await SendRequestAsync("account/rateLimits/read", new JsonObject(), cancellationToken).ConfigureAwait(false);
         return ParseRateLimits(result);
     }
 
@@ -68,11 +69,11 @@ internal sealed class CodexAppServerClient : ICodexAppServerClient
     {
         var result = await SendRequestAsync(
             "account/login/start",
-            new
+            new JsonObject
             {
-                type = "chatgpt",
-                useHostedLoginSuccessPage = true,
-                appBrand = "chatgpt",
+                ["type"] = "chatgpt",
+                ["useHostedLoginSuccessPage"] = true,
+                ["appBrand"] = "chatgpt",
             },
             cancellationToken).ConfigureAwait(false);
 
@@ -107,7 +108,7 @@ internal sealed class CodexAppServerClient : ICodexAppServerClient
 
     public async Task LogoutAsync(CancellationToken cancellationToken)
     {
-        _ = await SendRequestAsync("account/logout", new { }, cancellationToken).ConfigureAwait(false);
+        _ = await SendRequestAsync("account/logout", new JsonObject(), cancellationToken).ConfigureAwait(false);
     }
 
     internal static CodexAccountInfo ParseAccount(JsonElement result)
@@ -248,7 +249,7 @@ internal sealed class CodexAppServerClient : ICodexAppServerClient
 
     private async Task<JsonElement> SendRequestAsync(
         string method,
-        object parameters,
+        JsonNode? parameters,
         CancellationToken cancellationToken)
     {
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
@@ -320,17 +321,17 @@ internal sealed class CodexAppServerClient : ICodexAppServerClient
                 var version = typeof(CodexAppServerClient).Assembly.GetName().Version?.ToString(3) ?? "1.0.0";
                 _ = await SendRequestCoreAsync(
                     "initialize",
-                    new
+                    new JsonObject
                     {
-                        clientInfo = new
+                        ["clientInfo"] = new JsonObject
                         {
-                            name = "taskmetry",
-                            title = "Taskmetry",
-                            version,
+                            ["name"] = "taskmetry",
+                            ["title"] = "Taskmetry",
+                            ["version"] = version,
                         },
                     },
                     cancellationToken).ConfigureAwait(false);
-                await SendNotificationCoreAsync("initialized", new { }, cancellationToken).ConfigureAwait(false);
+                await SendNotificationCoreAsync("initialized", new JsonObject(), cancellationToken).ConfigureAwait(false);
                 _initialized = true;
             }
             catch
@@ -347,7 +348,7 @@ internal sealed class CodexAppServerClient : ICodexAppServerClient
 
     private async Task<JsonElement> SendRequestCoreAsync(
         string method,
-        object parameters,
+        JsonNode? parameters,
         CancellationToken cancellationToken)
     {
         var id = Interlocked.Increment(ref _nextRequestId);
@@ -359,7 +360,8 @@ internal sealed class CodexAppServerClient : ICodexAppServerClient
 
         try
         {
-            await WriteMessageAsync(new { method, id, @params = parameters }, cancellationToken).ConfigureAwait(false);
+            var envelope = new JsonObject { ["method"] = method, ["id"] = id, ["params"] = parameters };
+            await WriteMessageAsync(envelope, cancellationToken).ConfigureAwait(false);
             return await completion.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
         }
         finally
@@ -370,14 +372,14 @@ internal sealed class CodexAppServerClient : ICodexAppServerClient
 
     private Task SendNotificationCoreAsync(
         string method,
-        object parameters,
+        JsonNode? parameters,
         CancellationToken cancellationToken)
-        => WriteMessageAsync(new { method, @params = parameters }, cancellationToken);
+        => WriteMessageAsync(new JsonObject { ["method"] = method, ["params"] = parameters }, cancellationToken);
 
-    private async Task WriteMessageAsync(object message, CancellationToken cancellationToken)
+    private async Task WriteMessageAsync(JsonNode message, CancellationToken cancellationToken)
     {
         var writer = _standardInput ?? throw new IOException("Codex App Server is not running.");
-        var json = JsonSerializer.Serialize(message);
+        var json = message.ToJsonString();
         await _writeGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {

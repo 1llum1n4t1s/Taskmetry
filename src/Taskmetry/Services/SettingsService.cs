@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Taskmetry.Models;
+using Taskmetry.Serialization;
 
 namespace Taskmetry.Services;
 
@@ -20,12 +21,6 @@ public sealed record SettingsLoadResult(
 
 public sealed class SettingsService
 {
-    private static readonly JsonSerializerOptions JsonOptions = new()
-    {
-        WriteIndented = true,
-        PropertyNameCaseInsensitive = true,
-    };
-
     private readonly string _settingsPath;
     private bool _canSave = true;
 
@@ -54,7 +49,7 @@ public sealed class SettingsService
                 return CompleteLoad(new AppSettings(), SettingsLoadStatus.NotFound, canSave: true);
             }
 
-            var settings = JsonSerializer.Deserialize<AppSettings>(File.ReadAllText(_settingsPath), JsonOptions)
+            var settings = JsonSerializer.Deserialize(File.ReadAllText(_settingsPath), TaskmetryJsonContext.Default.AppSettings)
                 ?? throw new JsonException("設定JSONのルートがnullです。");
             return CompleteLoad(settings, SettingsLoadStatus.Success, canSave: true);
         }
@@ -98,7 +93,7 @@ public sealed class SettingsService
         var tempPath = $"{_settingsPath}.{Guid.NewGuid():N}.tmp";
         try
         {
-            File.WriteAllText(tempPath, JsonSerializer.Serialize(settings, JsonOptions));
+            File.WriteAllText(tempPath, JsonSerializer.Serialize(settings, TaskmetryJsonContext.Default.AppSettings));
             File.Move(tempPath, _settingsPath, overwrite: true);
             Current = settings.Clone();
             LastLoadResult = new SettingsLoadResult(Current.Clone(), SettingsLoadStatus.Success, CanSave: true);

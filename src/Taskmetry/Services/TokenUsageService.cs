@@ -77,10 +77,20 @@ public sealed class TokenUsageService : ILlmUsageService
         CancellationToken cancellationToken)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
-        _ = settings;
-        await Task.WhenAll(
-            RefreshCodexAsync(forceRefresh: false, cancellationToken),
-            RefreshClaudeAsync(forceRefresh: false, cancellationToken)).ConfigureAwait(false);
+
+        // 非表示のプロバイダーは外部プロセス起動・HTTP送信ごと止め、最後のスナップショットを返す
+        var refreshes = new List<Task>(2);
+        if (settings.ShowCodex)
+        {
+            refreshes.Add(RefreshCodexAsync(forceRefresh: false, cancellationToken));
+        }
+
+        if (settings.ShowClaude)
+        {
+            refreshes.Add(RefreshClaudeAsync(forceRefresh: false, cancellationToken));
+        }
+
+        await Task.WhenAll(refreshes).ConfigureAwait(false);
         return new Dictionary<string, TokenUsageSnapshot>(StringComparer.OrdinalIgnoreCase)
         {
             ["Codex"] = _codexSnapshot,
@@ -113,16 +123,26 @@ public sealed class TokenUsageService : ILlmUsageService
     public async Task<LlmLoginStart> BeginCodexLoginAsync(CancellationToken cancellationToken)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
-        var login = await _codexClient.StartChatGptLoginAsync(cancellationToken).ConfigureAwait(false);
-        _codexConnection = new LlmConnectionSnapshot(
-            "Codex",
-            LlmConnectionStatus.AuthenticationInProgress,
-            "ブラウザーでOpenAI認証を完了してください");
-        _codexSnapshot = TokenUsageSnapshot.Unavailable(
-            "Codex",
-            TokenAvailabilityReason.AuthenticationInProgress);
-        _nextCodexRefreshUtc = _timeProvider.GetUtcNow() + TimeSpan.FromMinutes(5);
-        return new LlmLoginStart(login.LoginId, login.AuthenticationUri);
+
+        // 進行中の定期更新に状態を上書きされないよう、更新と同じゲート内で遷移させる
+        await _codexRefreshGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            var login = await _codexClient.StartChatGptLoginAsync(cancellationToken).ConfigureAwait(false);
+            _codexConnection = new LlmConnectionSnapshot(
+                "Codex",
+                LlmConnectionStatus.AuthenticationInProgress,
+                "ブラウザーでOpenAI認証を完了してください");
+            _codexSnapshot = TokenUsageSnapshot.Unavailable(
+                "Codex",
+                TokenAvailabilityReason.AuthenticationInProgress);
+            _nextCodexRefreshUtc = _timeProvider.GetUtcNow() + TimeSpan.FromMinutes(5);
+            return new LlmLoginStart(login.LoginId, login.AuthenticationUri);
+        }
+        finally
+        {
+            _codexRefreshGate.Release();
+        }
     }
 
     public async Task<LlmConnectionSnapshot> CompleteCodexLoginAsync(
@@ -130,18 +150,27 @@ public sealed class TokenUsageService : ILlmUsageService
         CancellationToken cancellationToken)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
+        // 認証待ちは長時間になるためゲートの外で待ち、状態書き込みだけをゲート内で行う
         var completed = await _codexClient
             .WaitForLoginCompletionAsync(loginId, cancellationToken)
             .ConfigureAwait(false);
-        _nextCodexRefreshUtc = DateTimeOffset.MinValue;
 
         if (!completed)
         {
-            _codexConnection = AuthenticationRequired("OpenAI認証が完了しませんでした");
-            _codexSnapshot = TokenUsageSnapshot.Unavailable(
-                "Codex",
-                TokenAvailabilityReason.AuthenticationRequired);
-            return _codexConnection;
+            await _codexRefreshGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+            try
+            {
+                _codexConnection = AuthenticationRequired("OpenAI認証が完了しませんでした");
+                _codexSnapshot = TokenUsageSnapshot.Unavailable(
+                    "Codex",
+                    TokenAvailabilityReason.AuthenticationRequired);
+                _nextCodexRefreshUtc = DateTimeOffset.MinValue;
+                return _codexConnection;
+            }
+            finally
+            {
+                _codexRefreshGate.Release();
+            }
         }
 
         await RefreshCodexAsync(forceRefresh: true, cancellationToken).ConfigureAwait(false);
@@ -210,13 +239,23 @@ public sealed class TokenUsageService : ILlmUsageService
     public async Task<LlmConnectionSnapshot> DisconnectCodexAsync(CancellationToken cancellationToken)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
-        await _codexClient.LogoutAsync(cancellationToken).ConfigureAwait(false);
-        _codexConnection = AuthenticationRequired("OpenAIアカウントとの接続を解除しました");
-        _codexSnapshot = TokenUsageSnapshot.Unavailable(
-            "Codex",
-            TokenAvailabilityReason.AuthenticationRequired);
-        _nextCodexRefreshUtc = DateTimeOffset.MinValue;
-        return _codexConnection;
+
+        // 進行中の定期更新が完了してからログアウトし、切断状態を書き戻されないようにする
+        await _codexRefreshGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            await _codexClient.LogoutAsync(cancellationToken).ConfigureAwait(false);
+            _codexConnection = AuthenticationRequired("OpenAIアカウントとの接続を解除しました");
+            _codexSnapshot = TokenUsageSnapshot.Unavailable(
+                "Codex",
+                TokenAvailabilityReason.AuthenticationRequired);
+            _nextCodexRefreshUtc = DateTimeOffset.MinValue;
+            return _codexConnection;
+        }
+        finally
+        {
+            _codexRefreshGate.Release();
+        }
     }
 
     private async Task RefreshCodexAsync(bool forceRefresh, CancellationToken cancellationToken)
@@ -364,7 +403,7 @@ public sealed class TokenUsageService : ILlmUsageService
                 _claudeSnapshot = TokenUsageSnapshot.Unavailable(
                     "Claude",
                     TokenAvailabilityReason.AuthenticationRequired);
-                _nextClaudeRefreshUtc = now + SuccessfulRefreshInterval;
+                _nextClaudeRefreshUtc = DateTimeOffset.MaxValue;
             }
             catch (Exception ex) when (IsServiceFailure(ex))
             {
@@ -423,9 +462,11 @@ public sealed class TokenUsageService : ILlmUsageService
 
         _claudeConnection = new LlmConnectionSnapshot("Claude", status, description);
         _claudeSnapshot = TokenUsageSnapshot.Unavailable("Claude", reason);
-        _nextClaudeRefreshUtc = now + (status == LlmConnectionStatus.AuthenticationRequired
-            ? SuccessfulRefreshInterval
-            : FailedRefreshInterval);
+
+        // 失効・不正なSession Tokenは再試行しても同じ結果なので、再接続まで自動送信を止める
+        _nextClaudeRefreshUtc = status == LlmConnectionStatus.AuthenticationRequired
+            ? DateTimeOffset.MaxValue
+            : now + FailedRefreshInterval;
     }
 
     private void ApplyClaudeStorageFailure(DateTimeOffset now)
@@ -440,8 +481,10 @@ public sealed class TokenUsageService : ILlmUsageService
         _nextClaudeRefreshUtc = now + FailedRefreshInterval;
     }
 
+    // InvalidDataException は IOException の派生ではないため個別に列挙する
     private static bool IsServiceFailure(Exception exception) => exception is
         IOException
+        or InvalidDataException
         or Win32Exception
         or JsonException
         or UnauthorizedAccessException

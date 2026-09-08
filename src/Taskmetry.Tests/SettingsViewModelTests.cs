@@ -31,6 +31,39 @@ public sealed class SettingsViewModelTests
     }
 
     [Fact]
+    public void 左右分割とメーターの振り分けを保存して読み直す()
+    {
+        var directory = CreateTemporaryDirectory();
+        try
+        {
+            var path = Path.Combine(directory, "settings.json");
+            var settingsService = new SettingsService(path);
+            _ = settingsService.Load();
+            var viewModel = new SettingsViewModel(
+                settingsService,
+                new FakeStartupService(false),
+                new FakeDataFolderService());
+
+            viewModel.SplitRail = true;
+            viewModel.CpuSide = (int)Taskmetry.Models.RailSide.Right;
+            viewModel.ClaudeSide = (int)Taskmetry.Models.RailSide.Left;
+            viewModel.SaveCommand.Execute(null);
+
+            var reloaded = new SettingsService(path);
+            var settings = reloaded.Load().Settings;
+
+            Assert.True(settings.SplitRail);
+            Assert.Equal(Taskmetry.Models.RailSide.Right, settings.CpuSide);
+            Assert.Equal(Taskmetry.Models.RailSide.Left, settings.ClaudeSide);
+            Assert.Equal(Taskmetry.Models.RailSide.Right, settings.CodexSide);
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [Fact]
     public void 位置リセットの保存失敗をUI状態へ通知する()
     {
         var directory = CreateTemporaryDirectory();

@@ -4,11 +4,13 @@
 
 Taskmetry は、Windows のタスクバーに CPU・メモリ・AI サービスの公式使用枠を常時表示する軽量メーターです。
 
-公式サイトは [taskmetry.kagayoi.com](https://taskmetry.kagayoi.com/) です。サイトのソースは [landing/index.html](landing/index.html) にあります。
+公式サイトは [taskmetry.kagayoi.com](https://taskmetry.kagayoi.com/) です。サイトのソースは [../vps-web/lp/taskmetry/index.html](../vps-web/lp/taskmetry/index.html) にあります。
 
 中央のタスクアイコン群と通知領域の間にある実際の空きスペースを検出し、既存アイコンを覆わない幅へ自動調整します。空きが 260px 未満ならタスクバー外側へ退避し、Explorer が再起動した場合も再検出して追従します。
 
 タスクバーの上・下・左・右を自動判定し、向きに合わせて横型／縦型メーターを切り替えます。通常はクリック透過の「固定表示モード」で誤操作を防ぎ、設定から「レイアウト編集モード」にした場合だけドラッグできます。
+
+設定の「アイコン群の左右に分割して表示」をONにすると、スタートボタンとピン留めアイコンを挟んで左右 2 本のレールへメーターを振り分けられます。左レールはアイコン群の直前、右レールは通知領域の直前へ寄るので、ウィジェットボタンや通知アイコンを覆いません。各メーターの配置は個別に選べ、既定では CPU・RAM を左、AI 使用率を右にします。縦置きタスクバーでは左がアイコン群より上、右がアイコン群より下です。表示幅は左右のメーター数で按分され、分割中は位置ドラッグを使いません。
 
 ## 表示できる情報
 
@@ -75,7 +77,7 @@ pwsh -NoProfile -File scripts/release-local.ps1
 ```
 
 詳しい開発コマンドは [CONTRIBUTING.md](CONTRIBUTING.md) を参照してください。
-変更履歴は [CHANGELOG.md](CHANGELOG.md)、Cloudflare の構成は [web/README.md](web/README.md)、Microsoft Store 提出用の原稿は [store/README.md](store/README.md) にあります。
+変更履歴は [CHANGELOG.md](CHANGELOG.md)、Cloudflare の構成は [../vps-web/lp/README.md](../vps-web/lp/README.md)、Microsoft Store 提出用の原稿は [store/README.md](store/README.md) にあります。
 
 ## ライセンス
 

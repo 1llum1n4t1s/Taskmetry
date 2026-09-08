@@ -288,11 +288,7 @@ internal sealed class ClaudeWebUsageClient : IClaudeWebUsageClient
                 throw ChangedResponseException();
             }
 
-            var payload = await response.Content.ReadAsByteArrayAsync(cancellationToken).ConfigureAwait(false);
-            if (payload.Length > MaximumResponseBytes)
-            {
-                throw ChangedResponseException();
-            }
+            var payload = await ReadCappedAsync(response.Content, cancellationToken).ConfigureAwait(false);
 
             try
             {
@@ -370,6 +366,35 @@ internal sealed class ClaudeWebUsageClient : IClaudeWebUsageClient
             ClaudeWebFailureKind.ServiceUnavailable,
             "claude.aiのWeb応答仕様が変更された可能性があります。",
             innerException: innerException);
+
+    /// <summary>
+    /// Content-Length が無い応答でも上限を超えた時点で読み取りを打ち切る。
+    /// </summary>
+    private static async Task<byte[]> ReadCappedAsync(
+        HttpContent content,
+        CancellationToken cancellationToken)
+    {
+        await using var stream = await content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
+        using var buffer = new MemoryStream();
+        var chunk = new byte[16 * 1024];
+        while (true)
+        {
+            var read = await stream.ReadAsync(chunk, cancellationToken).ConfigureAwait(false);
+            if (read == 0)
+            {
+                break;
+            }
+
+            if (buffer.Length + read > MaximumResponseBytes)
+            {
+                throw ChangedResponseException();
+            }
+
+            buffer.Write(chunk, 0, read);
+        }
+
+        return buffer.ToArray();
+    }
 
     private static HttpClient CreateHttpClient()
     {

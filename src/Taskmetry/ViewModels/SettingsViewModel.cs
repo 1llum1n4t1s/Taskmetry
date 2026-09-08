@@ -50,6 +50,12 @@ public sealed partial class SettingsViewModel : ObservableObject, IDisposable
         ShowCodex = settings.ShowCodex;
         ShowClaude = settings.ShowClaude;
         ShowGemini = settings.ShowGemini;
+        SplitRail = settings.SplitRail;
+        CpuSide = (int)settings.CpuSide;
+        MemorySide = (int)settings.MemorySide;
+        CodexSide = (int)settings.CodexSide;
+        ClaudeSide = (int)settings.ClaudeSide;
+        GeminiSide = (int)settings.GeminiSide;
         StartWithWindows = settings.StartWithWindows;
         LayoutEditMode = settings.LayoutEditMode;
         PlacementMode = (int)settings.PlacementMode;
@@ -63,6 +69,12 @@ public sealed partial class SettingsViewModel : ObservableObject, IDisposable
     [ObservableProperty] private bool _showCodex;
     [ObservableProperty] private bool _showClaude;
     [ObservableProperty] private bool _showGemini;
+    [ObservableProperty] private bool _splitRail;
+    [ObservableProperty] private int _cpuSide;
+    [ObservableProperty] private int _memorySide;
+    [ObservableProperty] private int _codexSide;
+    [ObservableProperty] private int _claudeSide;
+    [ObservableProperty] private int _geminiSide;
     [ObservableProperty] private bool _startWithWindows;
     [ObservableProperty] private bool _layoutEditMode;
     [ObservableProperty] private int _placementMode;
@@ -99,6 +111,12 @@ public sealed partial class SettingsViewModel : ObservableObject, IDisposable
                 ShowCodex = ShowCodex,
                 ShowClaude = ShowClaude,
                 ShowGemini = ShowGemini,
+                SplitRail = SplitRail,
+                CpuSide = (RailSide)CpuSide,
+                MemorySide = (RailSide)MemorySide,
+                CodexSide = (RailSide)CodexSide,
+                ClaudeSide = (RailSide)ClaudeSide,
+                GeminiSide = (RailSide)GeminiSide,
                 StartWithWindows = StartWithWindows,
                 LayoutEditMode = LayoutEditMode,
                 PlacementMode = (RailPlacementMode)PlacementMode,

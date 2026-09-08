@@ -47,9 +47,15 @@ public sealed class TaskbarPlacementService
         int preferredLengthPixels,
         RailPlacementMode placementMode,
         int manualOffsetPixels,
+        RailSide slot,
         out PlacementResult placement)
     {
-        if (!TryCalculateCurrentPlacement(preferredLengthPixels, placementMode, manualOffsetPixels, out placement))
+        if (!TryCalculateCurrentPlacement(
+                preferredLengthPixels,
+                placementMode,
+                manualOffsetPixels,
+                slot,
+                out placement))
         {
             return false;
         }
@@ -79,6 +85,7 @@ public sealed class TaskbarPlacementService
         int preferredLengthPixels,
         RailPlacementMode placementMode,
         int manualOffsetPixels,
+        RailSide slot,
         out PlacementResult placement)
     {
         var taskbarHandle = NativeMethods.FindWindow("Shell_TrayWnd", null);
@@ -107,7 +114,8 @@ public sealed class TaskbarPlacementService
             monitorInfo.Monitor,
             preferredLengthPixels,
             placementMode,
-            manualOffsetPixels);
+            manualOffsetPixels,
+            slot);
         return true;
     }
 
@@ -118,24 +126,37 @@ public sealed class TaskbarPlacementService
         Rectangle monitor,
         int preferredLengthPixels,
         RailPlacementMode placementMode = RailPlacementMode.Auto,
-        int manualOffsetPixels = 0)
+        int manualOffsetPixels = 0,
+        RailSide slot = RailSide.Right)
     {
         var edge = DetectEdge(taskbar, monitor);
         var vertical = edge is TaskbarEdge.Left or TaskbarEdge.Right;
-        var mainStart = vertical
-            ? (rebar.IsValid ? rebar.Bottom + 6 : taskbar.Top + 8)
-            : (rebar.IsValid ? rebar.Right + 6 : taskbar.Left + 8);
-        var mainEnd = vertical
-            ? (tray.IsValid ? tray.Top - 6 : taskbar.Bottom - 8)
-            : (tray.IsValid ? tray.Left - 6 : taskbar.Right - 8);
+
+        // Right スロットはアイコン群と通知領域の間、Left スロットはアイコン群より手前の空き。
+        var leftSlot = slot == RailSide.Left;
+        var mainStart = leftSlot
+            ? (vertical ? taskbar.Top + 8 : taskbar.Left + 8)
+            : (vertical
+                ? (rebar.IsValid ? rebar.Bottom + 6 : taskbar.Top + 8)
+                : (rebar.IsValid ? rebar.Right + 6 : taskbar.Left + 8));
+        var mainEnd = leftSlot
+            ? (vertical
+                ? (rebar.IsValid ? rebar.Top - 6 : taskbar.Bottom - 8)
+                : (rebar.IsValid ? rebar.Left - 6 : taskbar.Right - 8))
+            : (vertical
+                ? (tray.IsValid ? tray.Top - 6 : taskbar.Bottom - 8)
+                : (tray.IsValid ? tray.Left - 6 : taskbar.Right - 8));
         var gapLength = Math.Max(0, mainEnd - mainStart);
         // Explorer 内部の占有領域が片方でも不明なら、アイコンを覆わないよう外側へ退避する。
-        var mayUseGap = rebar.IsValid && tray.IsValid && gapLength >= MinimumRailLength;
+        var neededRects = leftSlot ? rebar.IsValid : rebar.IsValid && tray.IsValid;
+        var mayUseGap = neededRects && gapLength >= MinimumRailLength;
         var useOutside = placementMode == RailPlacementMode.OutsideTaskbar || !mayUseGap;
 
         if (!useOutside)
         {
             var length = Math.Clamp(preferredLengthPixels, MinimumRailLength, gapLength);
+            // どちらのスロットも空きの終端側へ寄せる。Left ならアイコン群の直前、
+            // Right なら通知領域の直前になり、ウィジェットボタン等と重なりにくい。
             var baseMain = mainEnd - length;
             var main = Math.Clamp(baseMain + manualOffsetPixels, mainStart, mainEnd - length);
             var thickness = Math.Max(1, (vertical ? taskbar.Width : taskbar.Height) - 8);
@@ -148,9 +169,18 @@ public sealed class TaskbarPlacementService
         var monitorMainEnd = vertical ? monitor.Bottom - 8 : monitor.Right - 8;
         var monitorMainLength = Math.Max(MinimumRailLength, monitorMainEnd - monitorMainStart);
         var outerLength = Math.Clamp(preferredLengthPixels, MinimumRailLength, monitorMainLength);
-        var outerBaseMain = vertical
-            ? Math.Clamp((tray.IsValid ? tray.Top : taskbar.Bottom) - outerLength - 6, monitorMainStart, monitorMainEnd - outerLength)
-            : Math.Clamp((tray.IsValid ? tray.Left : taskbar.Right) - outerLength - 6, monitorMainStart, monitorMainEnd - outerLength);
+        // 外側退避でも Left はアイコン群の手前、Right は通知領域の手前を基準にする
+        var outerAnchor = leftSlot
+            ? (vertical
+                ? (rebar.IsValid ? rebar.Top : monitorMainStart + outerLength)
+                : (rebar.IsValid ? rebar.Left : monitorMainStart + outerLength))
+            : (vertical
+                ? (tray.IsValid ? tray.Top : taskbar.Bottom)
+                : (tray.IsValid ? tray.Left : taskbar.Right));
+        var outerBaseMain = Math.Clamp(
+            outerAnchor - outerLength - 6,
+            monitorMainStart,
+            monitorMainEnd - outerLength);
         var outerMain = Math.Clamp(outerBaseMain + manualOffsetPixels, monitorMainStart, monitorMainEnd - outerLength);
         var outerThickness = Math.Max(32, (vertical ? taskbar.Width : taskbar.Height) - 8);
 

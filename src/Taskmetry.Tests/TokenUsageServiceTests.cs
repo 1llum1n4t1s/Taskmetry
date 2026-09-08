@@ -242,6 +242,87 @@ public sealed class TokenUsageServiceTests
         Assert.Equal(48, snapshots["Codex"].UsagePercent);
     }
 
+    [Fact]
+    public async Task 公式APIの不正応答でも例外を漏らさず再試行状態にする()
+    {
+        var client = new FakeCodexAppServerClient
+        {
+            AccountFailure = new InvalidDataException("invalid account payload"),
+        };
+        using var service = new TokenUsageService(client);
+
+        var snapshots = await service.ReadAllAsync(new AppSettings(), TestContext.Current.CancellationToken);
+        var states = await service.ReadConnectionStatesAsync(false, TestContext.Current.CancellationToken);
+
+        Assert.Equal(TokenAvailabilityReason.NetworkError, snapshots["Codex"].AvailabilityReason);
+        Assert.Equal(LlmConnectionStatus.NetworkError, states["Codex"].Status);
+    }
+
+    [Fact]
+    public async Task 非表示のプロバイダーは公式APIを取得しない()
+    {
+        var codexClient = FakeCodexAppServerClient.Connected();
+        var claudeClient = new FakeClaudeWebUsageClient { HasStoredSessionKey = true };
+        using var service = new TokenUsageService(codexClient, claudeClient);
+
+        _ = await service.ReadAllAsync(
+            new AppSettings { ShowCodex = false, ShowClaude = false },
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(0, codexClient.AccountReadCount);
+        Assert.Equal(0, claudeClient.ReadCount);
+    }
+
+    [Fact]
+    public async Task 失効したClaudeTokenは再接続まで再送しない()
+    {
+        var time = new MutableTimeProvider(new DateTimeOffset(2026, 7, 22, 0, 0, 0, TimeSpan.Zero));
+        var claudeClient = new FakeClaudeWebUsageClient
+        {
+            HasStoredSessionKey = true,
+            ReadFailure = new ClaudeWebUsageException(
+                ClaudeWebFailureKind.AuthenticationRequired,
+                "expired session token"),
+        };
+        using var service = new TokenUsageService(
+            FakeCodexAppServerClient.Connected(),
+            claudeClient,
+            time);
+
+        _ = await service.ReadAllAsync(new AppSettings(), TestContext.Current.CancellationToken);
+        time.Advance(TimeSpan.FromHours(6));
+        var snapshots = await service.ReadAllAsync(new AppSettings(), TestContext.Current.CancellationToken);
+
+        Assert.Equal(1, claudeClient.ReadCount);
+        Assert.Equal(TokenAvailabilityReason.AuthenticationRequired, snapshots["Claude"].AvailabilityReason);
+    }
+
+    [Fact]
+    public async Task Codex切断は進行中の更新に上書きされない()
+    {
+        var client = FakeCodexAppServerClient.Connected();
+        var accountReadGate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        client.AccountReadGate = accountReadGate;
+        using var service = new TokenUsageService(client);
+
+        var refresh = service.ReadAllAsync(new AppSettings(), TestContext.Current.CancellationToken);
+        while (client.AccountReadCount == 0)
+        {
+            await Task.Delay(1, TestContext.Current.CancellationToken);
+        }
+
+        var disconnect = service.DisconnectCodexAsync(TestContext.Current.CancellationToken);
+        Assert.False(disconnect.IsCompleted);
+
+        accountReadGate.SetResult();
+        _ = await refresh;
+        var disconnected = await disconnect;
+        var states = await service.ReadConnectionStatesAsync(false, TestContext.Current.CancellationToken);
+
+        Assert.Equal(LlmConnectionStatus.AuthenticationRequired, disconnected.Status);
+        Assert.Equal(LlmConnectionStatus.AuthenticationRequired, states["Codex"].Status);
+    }
+
     private sealed class MutableTimeProvider(DateTimeOffset now) : TimeProvider
     {
         private DateTimeOffset _now = now;
@@ -257,6 +338,7 @@ public sealed class TokenUsageServiceTests
         internal CodexRateLimits RateLimits { get; set; } = new([]);
         internal bool LoginCompletesSuccessfully { get; set; }
         internal Exception? AccountFailure { get; set; }
+        internal TaskCompletionSource? AccountReadGate { get; set; }
         internal int AccountReadCount { get; private set; }
         internal int RateLimitsReadCount { get; private set; }
 
@@ -266,16 +348,21 @@ public sealed class TokenUsageServiceTests
             RateLimits = new CodexRateLimits([new TokenUsageWindow("5時間枠", 42, 300)]),
         };
 
-        public Task<CodexAccountInfo> ReadAccountAsync(CancellationToken cancellationToken)
+        public async Task<CodexAccountInfo> ReadAccountAsync(CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
             AccountReadCount++;
+            if (AccountReadGate is { } gate)
+            {
+                await gate.Task.ConfigureAwait(false);
+            }
+
             if (AccountFailure is { } failure)
             {
                 throw failure;
             }
 
-            return Task.FromResult(Account);
+            return Account;
         }
 
         public Task<CodexRateLimits> ReadRateLimitsAsync(CancellationToken cancellationToken)

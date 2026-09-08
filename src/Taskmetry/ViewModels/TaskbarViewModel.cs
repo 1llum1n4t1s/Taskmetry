@@ -20,6 +20,7 @@ public sealed partial class TaskbarViewModel : ObservableObject, IDisposable
     private AppSettings _settings;
     private Task? _refreshTask;
     private bool _manualOffsetSaveFailed;
+    private bool _disposed;
 
     public TaskbarViewModel(
         SettingsService settingsService,
@@ -36,18 +37,46 @@ public sealed partial class TaskbarViewModel : ObservableObject, IDisposable
         _codex = new MetricItemViewModel("CODEX", "#67A4FF");
         _claude = new MetricItemViewModel("CLAUDE", "#FFC857");
         _gemini = new MetricItemViewModel("GEMINI", "#62E6A8");
-        Metrics = [];
+        LeftMetrics = [];
+        RightMetrics = [];
         ApplyVisibility();
 
         _settingsService.SettingsChanged += OnSettingsChanged;
     }
 
-    public ObservableCollection<MetricItemViewModel> Metrics { get; }
+    /// <summary>アイコン群より手前（横置きなら左、縦置きなら上）の空きに並ぶメーター。</summary>
+    public ObservableCollection<MetricItemViewModel> LeftMetrics { get; }
+
+    /// <summary>アイコン群と通知領域の間の空きに並ぶメーター。分割OFFでは全メーターがここへ入る。</summary>
+    public ObservableCollection<MetricItemViewModel> RightMetrics { get; }
 
     public int PreferredWidthPixels => _settings.PreferredWidthPixels;
     public bool IsLayoutEditMode => _settings.LayoutEditMode;
     public RailPlacementMode PlacementMode => _settings.PlacementMode;
     public int ManualOffsetPixels => _settings.ManualOffsetPixels;
+    public bool IsSplitRail => _settings.SplitRail;
+
+    public ObservableCollection<MetricItemViewModel> MetricsFor(RailSide slot)
+        => slot == RailSide.Left ? LeftMetrics : RightMetrics;
+
+    public bool IsRailVisible(RailSide slot) => MetricsFor(slot).Count > 0;
+
+    /// <summary>
+    /// スロットごとの希望幅。分割時はメーター数で表示幅を按分し、
+    /// 左右でメーター 1 枚あたりの幅がそろうようにする。
+    /// </summary>
+    public int PreferredWidthFor(RailSide slot)
+    {
+        var slotCount = MetricsFor(slot).Count;
+        var totalCount = LeftMetrics.Count + RightMetrics.Count;
+        if (!IsSplitRail || slotCount == 0 || totalCount == 0)
+        {
+            return _settings.PreferredWidthPixels;
+        }
+
+        var perMetric = _settings.PreferredWidthPixels / (double)totalCount;
+        return (int)Math.Round(perMetric * slotCount);
+    }
 
     [ObservableProperty]
     private bool _isVertical;
@@ -58,6 +87,9 @@ public sealed partial class TaskbarViewModel : ObservableObject, IDisposable
     public bool IsHorizontal => !IsVertical;
 
     public event EventHandler? LayoutSettingsChanged;
+
+    /// <summary>メーターの振り分けが変わり、各レールの表示可否を見直す必要があるときに発火する。</summary>
+    public event EventHandler? RailCompositionChanged;
 
     public void Start()
     {
@@ -78,7 +110,8 @@ public sealed partial class TaskbarViewModel : ObservableObject, IDisposable
             {
                 break;
             }
-            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.ComponentModel.Win32Exception)
+            // 想定外の例外でも常駐ループを落とさない（落ちると全メーターが再起動まで止まる）
+            catch (Exception)
             {
                 await Dispatcher.UIThread.InvokeAsync(() =>
                 {
@@ -158,6 +191,8 @@ public sealed partial class TaskbarViewModel : ObservableObject, IDisposable
             OnPropertyChanged(nameof(IsLayoutEditMode));
             OnPropertyChanged(nameof(PlacementMode));
             OnPropertyChanged(nameof(ManualOffsetPixels));
+            OnPropertyChanged(nameof(IsSplitRail));
+            RailCompositionChanged?.Invoke(this, EventArgs.Empty);
             LayoutSettingsChanged?.Invoke(this, EventArgs.Empty);
         });
     }
@@ -166,7 +201,9 @@ public sealed partial class TaskbarViewModel : ObservableObject, IDisposable
     {
         IsVertical = placement.IsVertical;
         OnPropertyChanged(nameof(IsHorizontal));
-        var mode = IsLayoutEditMode ? "編集モード · ドラッグで移動" : "固定表示 · クリック透過";
+        var mode = IsLayoutEditMode
+            ? (IsSplitRail ? "編集モード · 左右分割中は位置固定" : "編集モード · ドラッグで移動")
+            : "固定表示 · クリック透過";
         var location = placement.IsOutside ? "タスクバー外側" : "空きスペース";
         LayoutHint = _manualOffsetSaveFailed
             ? "位置を保存できませんでした · 一時配置"
@@ -193,28 +230,59 @@ public sealed partial class TaskbarViewModel : ObservableObject, IDisposable
 
     private void ApplyVisibility()
     {
-        Metrics.Clear();
-        AddIfVisible(_cpu, _settings.ShowCpu);
-        AddIfVisible(_memory, _settings.ShowMemory);
-        AddIfVisible(_codex, _settings.ShowCodex);
-        AddIfVisible(_claude, _settings.ShowClaude);
-        AddIfVisible(_gemini, _settings.ShowGemini);
+        LeftMetrics.Clear();
+        RightMetrics.Clear();
+        AddIfVisible(_cpu, _settings.ShowCpu, _settings.CpuSide);
+        AddIfVisible(_memory, _settings.ShowMemory, _settings.MemorySide);
+        AddIfVisible(_codex, _settings.ShowCodex, _settings.CodexSide);
+        AddIfVisible(_claude, _settings.ShowClaude, _settings.ClaudeSide);
+        AddIfVisible(_gemini, _settings.ShowGemini, _settings.GeminiSide);
     }
 
-    private void AddIfVisible(MetricItemViewModel item, bool isVisible)
+    private void AddIfVisible(MetricItemViewModel item, bool isVisible, RailSide side)
     {
-        if (isVisible)
+        if (!isVisible)
         {
-            Metrics.Add(item);
+            return;
         }
+
+        // 分割OFFのときは振り分け設定を無視し、従来位置（アイコン右の空き）へまとめる
+        var target = _settings.SplitRail && side == RailSide.Left ? LeftMetrics : RightMetrics;
+        target.Add(item);
     }
 
     private static string FormatBytes(ulong bytes) => $"{bytes / 1024d / 1024d / 1024d:0.0} GB";
 
     public void Dispose()
     {
+        if (_disposed)
+        {
+            return;
+        }
+
+        _disposed = true;
         _settingsService.SettingsChanged -= OnSettingsChanged;
         _cancellation.Cancel();
+
+        var refreshTask = _refreshTask;
+        _refreshTask = null;
+        if (refreshTask is null || refreshTask.IsCompleted)
+        {
+            DisposeResources();
+            return;
+        }
+
+        // 更新ループが止まってから共有サービスを破棄する（UIスレッドはブロックしない）
+        _ = refreshTask.ContinueWith(
+            static (_, state) => ((TaskbarViewModel)state!).DisposeResources(),
+            this,
+            CancellationToken.None,
+            TaskContinuationOptions.ExecuteSynchronously,
+            TaskScheduler.Default);
+    }
+
+    private void DisposeResources()
+    {
         _tokenUsageService.Dispose();
         _cancellation.Dispose();
     }

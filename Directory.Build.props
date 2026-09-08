@@ -10,13 +10,19 @@
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
     <Version>1.0.3</Version>
-    <AssemblyCompany>1llum1n4t1s</AssemblyCompany>
-    <Authors>ゆろち</Authors>
-    <Copyright>Copyright © 2026 ゆろち</Copyright>
+    <Company>Kagayoi</Company>
+    <Authors>Kagayoi</Authors>
+    <Copyright>Copyright © 2026 Kagayoi</Copyright>
     <!-- Solution の x64 ビルドと dotnet run の AnyCPU 評価で実行ファイルの探索先を一致させる。 -->
     <BaseOutputPath>$(MSBuildProjectDirectory)\bin\</BaseOutputPath>
     <OutputPath>$(BaseOutputPath)$(Configuration)\</OutputPath>
     <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
     <AppendRuntimeIdentifierToOutputPath>false</AppendRuntimeIdentifierToOutputPath>
+    <!-- NativeAOT: JIT コンパイル自体を無くして起動を高速化。 -->
+    <PublishAot>true</PublishAot>
+    <!-- IDE コードスタイル分析をビルド時にも強制する (IDE0005 等)。IDE0005 はドキュメント生成が必須。 -->
+    <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
   </PropertyGroup>
 </Project>

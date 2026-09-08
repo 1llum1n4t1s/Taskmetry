@@ -89,6 +89,75 @@ public sealed class TaskbarPlacementServiceTests
     }
 
     [Fact]
+    public void 左スロットはアイコン群の直前へ寄せて配置する()
+    {
+        var taskbar = new TaskbarPlacementService.Rectangle(0, 1380, 2560, 1440);
+        var tray = new TaskbarPlacementService.Rectangle(2300, 1380, 2560, 1440);
+        var rebar = new TaskbarPlacementService.Rectangle(895, 1380, 1500, 1440);
+        var monitor = new TaskbarPlacementService.Rectangle(0, 0, 2560, 1440);
+
+        var result = TaskbarPlacementService.CalculatePlacement(
+            taskbar, tray, rebar, monitor, 370, RailPlacementMode.Auto, 0, RailSide.Left);
+
+        Assert.True(result.UsedBlankGap);
+        Assert.Equal(370, result.Width);
+        // 右端がアイコン群の直前に接し、ウィジェットボタン側（左端）には余白が残る
+        Assert.Equal(rebar.Left - 6, result.X + result.Width);
+        Assert.True(result.X > taskbar.Left + 8);
+    }
+
+    [Fact]
+    public void 左スロットは希望幅がアイコン群までの空きを超えても覆わない()
+    {
+        var taskbar = new TaskbarPlacementService.Rectangle(0, 1040, 1920, 1080);
+        var tray = new TaskbarPlacementService.Rectangle(1700, 1040, 1920, 1080);
+        var rebar = new TaskbarPlacementService.Rectangle(600, 1040, 1300, 1080);
+        var monitor = new TaskbarPlacementService.Rectangle(0, 0, 1920, 1080);
+
+        var result = TaskbarPlacementService.CalculatePlacement(
+            taskbar, tray, rebar, monitor, 1200, RailPlacementMode.Auto, 0, RailSide.Left);
+
+        Assert.True(result.UsedBlankGap);
+        Assert.Equal(taskbar.Left + 8, result.X);
+        Assert.Equal(rebar.Left - 6, result.X + result.Width);
+    }
+
+    [Fact]
+    public void 左スロットは空き不足なら外側の始端へ退避する()
+    {
+        // アイコン群がほぼ左端から始まり、手前に 260px の空きが取れない配置
+        var taskbar = new TaskbarPlacementService.Rectangle(0, 1040, 1920, 1080);
+        var tray = new TaskbarPlacementService.Rectangle(1700, 1040, 1920, 1080);
+        var rebar = new TaskbarPlacementService.Rectangle(120, 1040, 1300, 1080);
+        var monitor = new TaskbarPlacementService.Rectangle(0, 0, 1920, 1080);
+
+        var result = TaskbarPlacementService.CalculatePlacement(
+            taskbar, tray, rebar, monitor, 370, RailPlacementMode.Auto, 0, RailSide.Left);
+
+        Assert.False(result.UsedBlankGap);
+        Assert.True(result.IsOutside);
+        Assert.Equal(monitor.Left + 8, result.X);
+        Assert.True(result.Y + result.Height < taskbar.Top);
+    }
+
+    [Fact]
+    public void 縦タスクバーの左スロットはアイコン群より上の空きへ配置する()
+    {
+        var taskbar = new TaskbarPlacementService.Rectangle(0, 0, 60, 1440);
+        var rebar = new TaskbarPlacementService.Rectangle(0, 400, 60, 700);
+        var tray = new TaskbarPlacementService.Rectangle(0, 1200, 60, 1440);
+        var monitor = new TaskbarPlacementService.Rectangle(0, 0, 2560, 1440);
+
+        var result = TaskbarPlacementService.CalculatePlacement(
+            taskbar, tray, rebar, monitor, 300, RailPlacementMode.Auto, 0, RailSide.Left);
+
+        Assert.True(result.IsVertical);
+        Assert.True(result.UsedBlankGap);
+        Assert.Equal(rebar.Top - 6, result.Y + result.Height);
+        Assert.True(result.Y >= taskbar.Top + 8);
+    }
+
+    [Fact]
     public void 縦タスクバーでは縦長レールを空きへ配置する()
     {
         var taskbar = new TaskbarPlacementService.Rectangle(0, 0, 60, 1440);

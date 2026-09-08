@@ -86,7 +86,7 @@ if (-not $SkipUpload) {
 
     $bucketResponse = Invoke-RestMethod -Uri "https://api.cloudflare.com/client/v4/accounts/$AccountId/r2/buckets" -Headers $cloudflareHeaders -TimeoutSec 30
     if (-not $bucketResponse.success -or -not @($bucketResponse.result.buckets | Where-Object name -eq $Bucket)) {
-        throw "Cloudflare R2 bucket '$Bucket' がありません。先に web/README.md の初回設定を行ってください。"
+        throw "Cloudflare R2 bucket '$Bucket' がありません。先に ../vps-web/deploy/lp-gateways/taskmetry/README.md の初回設定を行ってください。"
     }
 }
 
@@ -114,7 +114,7 @@ Invoke-Native 'Velopack パッケージ作成と署名' {
         --packId Taskmetry `
         --packVersion $version `
         --packTitle 'Taskmetry' `
-        --packAuthors 'ゆろち' `
+        --packAuthors 'Kagayoi' `
         --mainExe Taskmetry.exe `
         --icon (Join-Path 'src' 'Taskmetry' 'icon' 'app.ico') `
         --packDir $PublishDirectory `

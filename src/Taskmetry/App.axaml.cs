@@ -4,6 +4,7 @@ using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Markup.Xaml;
 using Avalonia.Platform;
 using Avalonia.Threading;
+using Taskmetry.Models;
 using Taskmetry.Services;
 using Taskmetry.ViewModels;
 using Taskmetry.Views;
@@ -17,6 +18,8 @@ public sealed partial class App : Application
     private IDataFolderService? _dataFolderService;
     private ILlmUsageService? _llmUsageService;
     private TaskbarViewModel? _taskbarViewModel;
+    private TaskbarWindow? _leftRailWindow;
+    private TaskbarWindow? _rightRailWindow;
     private SettingsWindow? _settingsWindow;
     private TrayIcon? _trayIcon;
     private IClassicDesktopStyleApplicationLifetime? _desktop;
@@ -44,15 +47,26 @@ public sealed partial class App : Application
                 new SystemMetricsService(),
                 _llmUsageService);
 
-            var taskbarWindow = new TaskbarWindow(
-                new TaskbarPlacementService(),
+            // アイコン群の左右それぞれの空きを 1 レール 1 ウィンドウで担当する
+            var placementService = new TaskbarPlacementService();
+            _rightRailWindow = new TaskbarWindow(
+                placementService,
                 _taskbarViewModel,
-                ShowSettings);
-            desktop.MainWindow = taskbarWindow;
+                ShowSettings,
+                RailSide.Right);
+            _leftRailWindow = new TaskbarWindow(
+                placementService,
+                _taskbarViewModel,
+                ShowSettings,
+                RailSide.Left);
+            desktop.MainWindow = _rightRailWindow;
             desktop.Exit += OnDesktopExit;
 
             CreateTrayIcon();
             _taskbarViewModel.Start();
+            _leftRailWindow.Show();
+            _leftRailWindow.ApplyRailComposition();
+            _rightRailWindow.ApplyRailComposition();
 
             if (settings.FirstRun)
             {
@@ -150,6 +164,9 @@ public sealed partial class App : Application
         _lifetimeCancellation.Cancel();
         _trayIcon?.Dispose();
         _trayIcon = null;
+        _leftRailWindow?.Close();
+        _leftRailWindow = null;
+        _rightRailWindow = null;
         _taskbarViewModel?.Dispose();
         _taskbarViewModel = null;
         _llmUsageService = null;
