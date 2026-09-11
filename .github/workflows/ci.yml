@@ -34,7 +34,7 @@ jobs:
         run: dotnet build Taskmetry.slnx -c Release --no-restore
 
       - name: テスト
-        run: dotnet test src/Taskmetry.Tests/Taskmetry.Tests.csproj -c Release --no-build --logger "trx;LogFileName=taskmetry-tests.trx" --results-directory TestResults
+        run: dotnet test Taskmetry.slnx -c Release --no-build
 
       - name: テスト結果をアップロード
         if: always()
