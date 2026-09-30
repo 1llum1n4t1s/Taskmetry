@@ -9,8 +9,8 @@ param(
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
-$VpkVersion = '1.2.0'
-$WranglerVersion = '4.112.0'
+$VpkVersion = '1.2.161'
+$WranglerVersion = '4.144.0'
 $Bucket = 'taskmetry-updates'
 $BaseUrl = 'https://taskmetry.kagayoi.com'
 $ZoneName = 'kagayoi.com'
