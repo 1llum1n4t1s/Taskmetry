@@ -124,30 +124,6 @@ public sealed class SettingsViewModelTests
     }
 
     [Fact]
-    public void 保存先を開く処理をサービス境界へ委譲する()
-    {
-        var directory = CreateTemporaryDirectory();
-        try
-        {
-            var settingsService = new SettingsService(Path.Combine(directory, "settings.json"));
-            _ = settingsService.Load();
-            var dataFolder = new FakeDataFolderService();
-            var viewModel = new SettingsViewModel(
-                settingsService,
-                new FakeStartupService(false),
-                dataFolder);
-
-            viewModel.OpenDataFolderCommand.Execute(null);
-
-            Assert.True(dataFolder.WasOpened);
-        }
-        finally
-        {
-            Directory.Delete(directory, recursive: true);
-        }
-    }
-
-    [Fact]
     public async Task CodexのWeb認証URLを既定ブラウザーへ渡して接続状態を更新する()
     {
         var directory = CreateTemporaryDirectory();

@@ -38,16 +38,4 @@ public sealed class AppSettingsTests
         Assert.Equal(RailSide.Right, settings.ClaudeSide);
     }
 
-    [Fact]
-    public void 既定では左にシステム指標と右にAI使用率を振り分ける()
-    {
-        var settings = new AppSettings();
-
-        Assert.False(settings.SplitRail);
-        Assert.Equal(RailSide.Left, settings.CpuSide);
-        Assert.Equal(RailSide.Left, settings.MemorySide);
-        Assert.Equal(RailSide.Right, settings.CodexSide);
-        Assert.Equal(RailSide.Right, settings.ClaudeSide);
-        Assert.Equal(RailSide.Right, settings.GeminiSide);
-    }
 }

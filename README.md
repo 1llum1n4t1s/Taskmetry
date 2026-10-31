@@ -73,7 +73,8 @@ dotnet publish src/Taskmetry/Taskmetry.csproj -c Release -r win-x64 --self-conta
 署名付きリリースは SimplySign Desktop へ接続後、次のスクリプトで作成します。通常は `vava` Skill から呼び出します。
 
 ```powershell
-pwsh -NoProfile -File scripts/release-local.ps1
+pwsh -NoProfile -Command 'if (-not (Get-ChildItem Cert:\CurrentUser\My | Where-Object { $_.Subject -like "CN=Open Source Developer Yuichiro Shinozaki*" -and $_.NotAfter -gt (Get-Date) })) { exit 1 }'
+if ($LASTEXITCODE -eq 0) { pwsh -NoProfile -File scripts/release-local.ps1 } else { throw '署名証明書が見つかりません。SimplySign Desktop を起動してトークンでログインしてください。' }
 ```
 
 詳しい開発コマンドは [CONTRIBUTING.md](CONTRIBUTING.md) を参照してください。
