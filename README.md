@@ -88,7 +88,7 @@ if ($LASTEXITCODE -eq 0) { pwsh -NoProfile -File scripts/release-local.ps1 } els
 
 R2 への配布は PowerShell 7.2 以上と同梱 `scripts/R2Distribution.Common.ps1` を使用します。Node.js・pnpm・Wrangler は不要です。既存の Cloudflare API token を使用し、固定 URL は再検証、不変の版付き成果物は新規作成時に1年間のキャッシュを指定します。
 
-署名付き配布では、lock file の NativeAOT compiler と一致する .NET SDK が必要です。現在の lock は compiler 10.0.13 で、SDK 10.0.402 が対応します。別の SDK が既定の場合は、公式配布の SDK を任意の場所へ展開し、その `dotnet.exe` があるディレクトリを指定してください（通常の開発用 SDK は変更しません）。
+署名付き配布では、lock file の NativeAOT compiler と一致する .NET SDK が必要です。現在の lock は compiler 10.0.14 で、SDK 10.0.403 が対応します。別の SDK が既定の場合は、公式配布の SDK を任意の場所へ展開し、その `dotnet.exe` があるディレクトリを指定してください（通常の開発用 SDK は変更しません）。
 
 ```powershell
 # TASKMETRY_DOTNET_ROOT には展開した対応 SDK の絶対パスを設定する
